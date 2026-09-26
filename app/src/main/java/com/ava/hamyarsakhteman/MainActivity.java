@@ -46,6 +46,14 @@ public class MainActivity extends Activity {
     }
 
     private void openUnit(String unit){
-        Toast.makeText(this,"اطلاعات واحد "+unit+"\nمالک، تلفن، پارکینگ، انباری",Toast.LENGTH_LONG).show();
+        LinearLayout box=new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(20,20,20,20);
+        TextView info=new TextView(this);
+        info.setText("پروفایل واحد "+unit+"\n\nمالک:\nتلفن:\nپارکینگ:\nانباری:\nکنتور فرعی آب:");
+        info.setTextColor(Color.WHITE);
+        info.setTextSize(18);
+        box.addView(info);
+        setContentView(box);
     }
 }
