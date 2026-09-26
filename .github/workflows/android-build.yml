@@ -1,0 +1,12 @@
+name: Android Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare build
+        run: echo "Hamyar Sakhteman build pipeline ready"
