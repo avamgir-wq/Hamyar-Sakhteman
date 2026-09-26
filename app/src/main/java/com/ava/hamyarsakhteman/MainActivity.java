@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.graphics.Color;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.*;
 
 public class MainActivity extends Activity {
@@ -30,16 +31,21 @@ public class MainActivity extends Activity {
         root.addView(month);
 
         String[][] floors={{"۱۰","۱۱","۱۲"},{"۷","۸","۹"},{"۴","۵","۶"},{"۱","۲","۳"}};
-        for(int f=0;f<4;f++){
+        for(String[] floor:floors){
             LinearLayout row=new LinearLayout(this);
             row.setGravity(Gravity.CENTER);
-            for(String u:floors[f]){
+            for(String u:floor){
                 Button b=new Button(this);
                 b.setText("واحد "+u+"\nشارژ -\nآب -");
+                b.setOnClickListener(v -> openUnit(u));
                 row.addView(b);
             }
             root.addView(row);
         }
         setContentView(root);
+    }
+
+    private void openUnit(String unit){
+        Toast.makeText(this,"اطلاعات واحد "+unit+"\nمالک، تلفن، پارکینگ، انباری",Toast.LENGTH_LONG).show();
     }
 }
