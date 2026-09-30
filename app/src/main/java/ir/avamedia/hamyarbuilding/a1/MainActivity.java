@@ -10,26 +10,31 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.text.Editable;
 import android.text.InputType;
 import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
-import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
+import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
-import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -47,16 +52,20 @@ public class MainActivity extends Activity {
     private static final int MUTED = Color.rgb(116,104,94);
     private static final int GREEN = Color.rgb(45,122,72);
     private static final int RED = Color.rgb(176,66,58);
+    private static final int ORANGE = Color.rgb(194,126,44);
+
+    private static final int REQ_BACKUP_CREATE = 501;
+    private static final int REQ_BACKUP_OPEN = 502;
 
     private DataStore store;
     private Typeface font = Typeface.DEFAULT;
     private Typeface bold = Typeface.DEFAULT_BOLD;
     private LinearLayout root;
     private FrameLayout content;
-    private Spinner monthSpinner;
+    private TextView monthLabel;
     private String monthKey;
     private String screen = "dashboard";
-    private boolean changingMonth;
+    private int detailUnit = 0;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -65,6 +74,7 @@ public class MainActivity extends Activity {
             Window w = getWindow();
             w.setStatusBarColor(DARK);
             w.setNavigationBarColor(DARK);
+            w.getDecorView().setSystemUiVisibility(0);
             try { font = Typeface.createFromAsset(getAssets(), "fonts/shabnam.ttf"); } catch (Throwable ignored) {}
             try { bold = Typeface.createFromAsset(getAssets(), "fonts/shabnam_bold.ttf"); } catch (Throwable ignored) {}
             store = new DataStore(this);
@@ -77,8 +87,8 @@ public class MainActivity extends Activity {
     }
 
     private void showFatal(Throwable e) {
-        LinearLayout p = vbox(16);
-        p.setPadding(dp(24),dp(24),dp(24),dp(24));
+        LinearLayout p = vbox();
+        p.setPadding(dp(24),dp(36),dp(24),dp(24));
         p.setBackgroundColor(CREAM);
         p.addView(tv("همیار ساختمان",24,DARK,true));
         p.addView(tv("خطای راه‌اندازی برنامه\n\n" + e.getClass().getSimpleName() + "\n" +
@@ -87,79 +97,45 @@ public class MainActivity extends Activity {
     }
 
     private void buildShell() {
-        root = vbox(0);
+        root = vbox();
         root.setBackgroundColor(CREAM);
         root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         setContentView(root);
 
-        LinearLayout header = vbox(6);
-        header.setPadding(dp(12),dp(10),dp(12),dp(8));
+        root.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+            @Override public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
+                v.setPadding(0, Math.max(0, insets.getSystemWindowInsetTop()), 0, 0);
+                return insets;
+            }
+        });
+        root.requestApplyInsets();
+
+        LinearLayout header = vbox();
+        header.setPadding(dp(14),dp(10),dp(14),dp(10));
         header.setBackgroundColor(DARK);
         root.addView(header, lp(-1,-2));
 
-        LinearLayout top = hbox();
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(top, lp(-1,-2));
-
-        ImageView icon = new ImageView(this);
-        icon.setImageResource(R.drawable.app_icon);
-        icon.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        icon.setBackground(round(Color.WHITE,12,0,0));
-        top.addView(icon, lp(dp(54),dp(54)));
-
-        LinearLayout names = vbox(0);
-        names.setPadding(dp(10),0,dp(10),0);
-        top.addView(names, new LinearLayout.LayoutParams(0,-2,1f));
-        names.addView(tv("همیار ساختمان",20,Color.WHITE,true));
-        names.addView(tv("بلوک A1 مجتمع فرهیختگان",12,GOLD,false));
-
-        TextView badge = tv("A1",16,DARK,true);
-        badge.setGravity(Gravity.CENTER);
-        badge.setBackground(round(GOLD,10,0,0));
-        top.addView(badge, lp(dp(46),dp(38)));
+        LinearLayout names = vbox();
+        names.setGravity(Gravity.CENTER);
+        names.addView(center("همیار ساختمان",21,Color.WHITE,true));
+        names.addView(center("بلوک A1 مجتمع فرهیختگان",12,GOLD,false));
+        header.addView(names, lp(-1,dp(62)));
 
         LinearLayout monthRow = hbox();
-        monthRow.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(monthRow, lp(-1,dp(44)));
-        monthRow.addView(tv("ماه مالی",12,Color.WHITE,false), lp(dp(70),-1));
+        monthRow.setGravity(Gravity.CENTER);
+        header.addView(monthRow, lp(-1,dp(48)));
 
-        final List<String> keys = PersianDate.nearbyMonthKeys();
-        List<String> labels = new ArrayList<>();
-        for (String k : keys) labels.add(PersianDate.monthLabel(k));
-        monthSpinner = new Spinner(this);
-        ArrayAdapter<String> a = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, labels) {
-            @Override public View getView(int position, View convertView, ViewGroup parent) {
-                TextView t = tv(getItem(position),12,Color.WHITE,true);
-                t.setGravity(Gravity.CENTER);
-                t.setPadding(dp(8),0,dp(8),0);
-                t.setBackground(round(Color.rgb(78,49,33),9,1,Color.rgb(115,77,50)));
-                return t;
-            }
-            @Override public View getDropDownView(int position, View convertView, ViewGroup parent) {
-                TextView t = tv(getItem(position),13,TEXT,false);
-                t.setPadding(dp(12),dp(12),dp(12),dp(12));
-                t.setBackgroundColor(Color.WHITE);
-                return t;
-            }
-        };
-        monthSpinner.setAdapter(a);
-        int ix = keys.indexOf(monthKey);
-        if (ix < 0) ix = keys.size()/2;
-        changingMonth = true;
-        monthSpinner.setSelection(ix,false);
-        changingMonth = false;
-        monthSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(AdapterView<?> p, View v, int position, long id) {
-                if (changingMonth || position < 0 || position >= keys.size()) return;
-                String k = keys.get(position);
-                if (!k.equals(monthKey)) {
-                    monthKey = k;
-                    render();
-                }
-            }
-            @Override public void onNothingSelected(AdapterView<?> p) {}
-        });
-        monthRow.addView(monthSpinner, new LinearLayout.LayoutParams(0,dp(40),1f));
+        Button next = button("ماه بعد ›",Color.WHITE,Color.TRANSPARENT,false);
+        next.setOnClickListener(v -> changeMonth(1));
+        monthRow.addView(next,new LinearLayout.LayoutParams(0,-1,1f));
+
+        monthLabel = center(PersianDate.monthLabel(monthKey),14,Color.WHITE,true);
+        monthLabel.setBackground(round(Color.rgb(78,49,33),11,1,Color.rgb(128,84,55)));
+        monthRow.addView(monthLabel,new LinearLayout.LayoutParams(0,dp(40),1.45f));
+
+        Button prev = button("‹ ماه قبل",Color.WHITE,Color.TRANSPARENT,false);
+        prev.setOnClickListener(v -> changeMonth(-1));
+        monthRow.addView(prev,new LinearLayout.LayoutParams(0,-1,1f));
 
         content = new FrameLayout(this);
         root.addView(content, new LinearLayout.LayoutParams(-1,0,1f));
@@ -174,16 +150,20 @@ public class MainActivity extends Activity {
         addNav(nav,"گزارش","reports");
     }
 
+    private void changeMonth(int delta) {
+        monthKey = PersianDate.shiftMonth(monthKey, delta);
+        if (monthLabel != null) monthLabel.setText(PersianDate.monthLabel(monthKey));
+        render();
+    }
+
     private void addNav(LinearLayout nav, String label, final String target) {
         Button b = button(label,Color.WHITE,Color.TRANSPARENT,false);
         b.setTextSize(11);
-        b.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                if ("dashboard".equals(target)) showDashboard();
-                else if ("units".equals(target)) showUnits();
-                else if ("finance".equals(target)) showFinance();
-                else showReports();
-            }
+        b.setOnClickListener(v -> {
+            if ("dashboard".equals(target)) showDashboard();
+            else if ("units".equals(target)) showUnits();
+            else if ("finance".equals(target)) showFinance();
+            else showReports();
         });
         nav.addView(b,new LinearLayout.LayoutParams(0,-1,1f));
     }
@@ -197,6 +177,8 @@ public class MainActivity extends Activity {
         else if ("expenses".equals(screen)) showExpenses();
         else if ("fund".equals(screen)) showFund();
         else if ("sms".equals(screen)) showSmsSettings();
+        else if ("backup".equals(screen)) showBackup();
+        else if ("unitDetail".equals(screen) && detailUnit > 0) showUnitDetail(detailUnit);
         else showReports();
     }
 
@@ -207,19 +189,19 @@ public class MainActivity extends Activity {
     }
 
     private void showDashboard() {
-        LinearLayout body = vbox(8);
+        LinearLayout body = vbox();
         body.setPadding(dp(10),dp(10),dp(10),dp(16));
 
         LinearLayout stats = hbox();
         body.addView(stats,lp(-1,-2));
         stat(stats,"موجودی صندوق",store.fundBalance());
-        stat(stats,"مطالبات ماه",store.monthDebt(monthKey));
+        stat(stats,"مطالبات تا این ماه",store.totalDebtThrough(monthKey));
         stat(stats,"هزینه ماه",store.monthExpenses(monthKey));
 
-        TextView h = tv("وضعیت واحدها",17,DARK,true);
-        h.setPadding(dp(3),dp(8),dp(3),0);
+        TextView h = tv("وضعیت واحدها",18,DARK,true);
+        h.setPadding(dp(3),dp(10),dp(3),0);
         body.addView(h);
-        body.addView(tv("۴ طبقه × ۳ واحد — وضعیت شارژ و آب در " + PersianDate.monthLabel(monthKey),10,MUTED,false));
+        body.addView(tv("وضعیت شارژ و آب در " + PersianDate.monthLabel(monthKey),10,MUTED,false));
 
         int[][] rows = {{10,11,12},{7,8,9},{4,5,6},{1,2,3}};
         for (int[] row : rows) {
@@ -228,31 +210,32 @@ public class MainActivity extends Activity {
             for (int n : row) {
                 final int unit = n;
                 DataStore.UnitInfo u = store.getUnit(n);
-                DataStore.MonthData md = store.getMonth(monthKey);
-                boolean cp = store.isChargePaid(monthKey,n);
-                boolean wp = store.isWaterPaid(monthKey,n);
-                String cs = md.chargeAmount<=0 ? "شارژ —" : (cp ? "شارژ ✓" : "شارژ ✕");
+                int cs = store.chargeStatus(monthKey,n);
                 long ws = store.waterShare(monthKey,n);
-                String water = ws<=0 ? "آب —" : (wp ? "آب ✓" : "آب ✕");
-                String resident = "";
-                if (u != null) {
-                    if (!TextUtils.isEmpty(u.tenant)) resident=u.tenant;
-                    else if (!TextUtils.isEmpty(u.owner)) resident=u.owner;
-                }
-                LinearLayout card = vbox(2);
+                boolean wp = store.isWaterPaid(monthKey,n);
+
+                String chargeText;
+                int chargeColor;
+                if (cs == 0) { chargeText="شارژ —"; chargeColor=MUTED; }
+                else if (cs == 1) { chargeText="شارژ ✕"; chargeColor=RED; }
+                else if (cs == 2) { chargeText="شارژ ناقص"; chargeColor=ORANGE; }
+                else { chargeText="شارژ ✓"; chargeColor=GREEN; }
+
+                String waterText = ws<=0 ? "آب —" : (wp ? "آب ✓" : "آب ✕");
+                int waterColor = ws<=0 ? MUTED : (wp ? GREEN : RED);
+
+                String resident = u == null ? "" : u.residentName();
+
+                LinearLayout card = vbox();
                 card.setGravity(Gravity.CENTER);
                 card.setPadding(dp(4),dp(7),dp(4),dp(7));
                 card.setBackground(round(Color.WHITE,12,1,Color.rgb(221,204,182)));
                 card.addView(center("واحد " + fa(n),15,DARK,true));
                 card.addView(center(resident,9,MUTED,false));
-                card.addView(center(cs,10,cp?GREEN:(md.chargeAmount>0?RED:MUTED),false));
-                card.addView(center(water,10,wp?GREEN:(ws>0?RED:MUTED),false));
-                card.setOnClickListener(new View.OnClickListener() {
-                    @Override public void onClick(View v) { editUnit(unit); }
-                });
-                card.setOnLongClickListener(new View.OnLongClickListener() {
-                    @Override public boolean onLongClick(View v) { sendUnitReminder(unit); return true; }
-                });
+                card.addView(center(chargeText,10,chargeColor,false));
+                card.addView(center(waterText,10,waterColor,false));
+                card.setOnClickListener(v -> showUnitDetail(unit));
+
                 LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,dp(112),1f);
                 p.setMargins(dp(3),dp(4),dp(3),dp(4));
                 r.addView(card,p);
@@ -262,19 +245,123 @@ public class MainActivity extends Activity {
     }
 
     private void stat(LinearLayout row, String title, long value) {
-        LinearLayout c = vbox(2);
+        LinearLayout c = vbox();
         c.setGravity(Gravity.CENTER);
         c.setPadding(dp(4),dp(8),dp(4),dp(8));
         c.setBackground(round(CREAM2,10,1,Color.rgb(218,196,169)));
         c.addView(center(title,9,MUTED,false));
-        c.addView(center(money(value),11,DARK,true));
+        c.addView(center(money(value),10,DARK,true));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,dp(70),1f);
         p.setMargins(dp(3),0,dp(3),0);
         row.addView(c,p);
     }
 
+    private void showUnitDetail(int number) {
+        detailUnit = number;
+        DataStore.UnitInfo u = store.getUnit(number);
+        if (u == null) return;
+
+        LinearLayout body=vbox();
+        body.setPadding(dp(12),dp(12),dp(12),dp(20));
+        body.addView(tv("واحد " + fa(number),20,DARK,true));
+        body.addView(tv("اطلاعات و خلاصه مالی",10,MUTED,false));
+
+        LinearLayout info = card();
+        info.addView(detailLine("مالک", emptyDash(u.owner)));
+        info.addView(detailLine("موبایل مالک", emptyDash(u.ownerPhone)));
+        if (DataStore.OCC_TENANT.equals(u.occupancy)) {
+            info.addView(detailLine("مستأجر", emptyDash(u.tenant)));
+            info.addView(detailLine("موبایل مستأجر", emptyDash(u.tenantPhone)));
+        } else if (DataStore.OCC_VACANT.equals(u.occupancy)) {
+            info.addView(detailLine("وضعیت سکونت","واحد خالی"));
+        } else {
+            info.addView(detailLine("وضعیت سکونت","مالک ساکن است"));
+        }
+        info.addView(detailLine("تعداد نفرات",fa(u.occupants)));
+        body.addView(info,rowParams());
+
+        long chargeDue=store.chargeDue(monthKey,number);
+        long chargePaid=store.chargePaidAmount(monthKey,number);
+        long water=store.waterShare(monthKey,number);
+        long monthDebt=store.unitMonthDebt(monthKey,number);
+        long totalDebt=store.unitTotalDebtThrough(monthKey,number);
+
+        LinearLayout fin=card();
+        fin.addView(detailLine("شارژ این ماه",chargeDue<=0?"ثبت نشده":money(chargeDue)));
+        fin.addView(detailLine("پرداخت شارژ",money(Math.min(chargePaid,chargeDue))));
+        fin.addView(detailLine("مانده شارژ",money(Math.max(0,chargeDue-chargePaid))));
+        fin.addView(detailLine("سهم آب",water<=0?"ثبت نشده":money(water)));
+        fin.addView(detailLine("وضعیت آب",water<=0?"—":(store.isWaterPaid(monthKey,number)?"پرداخت شده":"پرداخت نشده")));
+        fin.addView(detailLine("بدهی " + PersianDate.monthLabel(monthKey),money(monthDebt)));
+        fin.addView(detailLine("کل بدهی تا این ماه",money(totalDebt)));
+        body.addView(fin,rowParams());
+
+        if (totalDebt > 0L) {
+            Button sms=button("ارسال پیامک یادآوری",Color.WHITE,BROWN,true);
+            sms.setOnClickListener(v->sendUnitReminder(number));
+            body.addView(sms,buttonParams());
+        }
+
+        List<DataStore.ChargePayment> payments=store.paymentsForUnit(number);
+        if(!payments.isEmpty()) {
+            body.addView(tv("سوابق پرداخت شارژ",15,DARK,true));
+            int shown=0;
+            for(final DataStore.ChargePayment p:payments) {
+                LinearLayout row=hbox();
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setPadding(dp(10),dp(8),dp(10),dp(8));
+                row.setBackground(round(Color.WHITE,10,1,Color.rgb(224,207,185)));
+                LinearLayout text=vbox();
+                text.addView(tv(p.date + " — " + money(p.amount),11,TEXT,true));
+                text.addView(tv(allocationSummary(p.allocations),9,MUTED,false));
+                row.addView(text,new LinearLayout.LayoutParams(0,-2,1f));
+                Button del=button("حذف",RED,CREAM2,false);
+                del.setOnClickListener(v->new AlertDialog.Builder(this)
+                        .setTitle("حذف پرداخت")
+                        .setMessage("این پرداخت از سوابق حذف شود؟")
+                        .setNegativeButton("انصراف",null)
+                        .setPositiveButton("حذف",(d,w)->{store.deleteChargePayment(p.id);showUnitDetail(number);})
+                        .show());
+                row.addView(del,lp(dp(60),dp(36)));
+                body.addView(row,rowParams());
+                shown++;
+                if(shown>=5) break;
+            }
+        }
+
+        setPage("unitDetail",scroll(body));
+    }
+
+    private String allocationSummary(Map<String,Long> allocations) {
+        if(allocations==null || allocations.isEmpty()) return "بدون تخصیص ماهانه";
+        StringBuilder sb=new StringBuilder();
+        int i=0;
+        for(Map.Entry<String,Long> e:allocations.entrySet()) {
+            if(i>0) sb.append("، ");
+            sb.append(PersianDate.monthLabel(e.getKey())).append(": ").append(money(e.getValue()));
+            i++;
+            if(i>=3 && allocations.size()>3){sb.append(" ...");break;}
+        }
+        return sb.toString();
+    }
+
+    private View detailLine(String label,String value) {
+        LinearLayout r=hbox();
+        r.setPadding(0,dp(4),0,dp(4));
+        r.addView(tv(label,10,MUTED,false),new LinearLayout.LayoutParams(0,-2,1f));
+        r.addView(tv(value,11,TEXT,true),new LinearLayout.LayoutParams(0,-2,1.5f));
+        return r;
+    }
+
+    private LinearLayout card() {
+        LinearLayout c=vbox();
+        c.setPadding(dp(12),dp(10),dp(12),dp(10));
+        c.setBackground(round(Color.WHITE,11,1,Color.rgb(224,207,185)));
+        return c;
+    }
+
     private void showUnits() {
-        LinearLayout body = vbox(7);
+        LinearLayout body = vbox();
         body.setPadding(dp(10),dp(10),dp(10),dp(16));
         body.addView(tv("پروفایل ۱۲ واحد",18,DARK,true));
         for (DataStore.UnitInfo u : store.getUnits()) {
@@ -283,14 +370,16 @@ public class MainActivity extends Activity {
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(dp(10),dp(8),dp(10),dp(8));
             row.setBackground(round(Color.WHITE,10,1,Color.rgb(224,207,185)));
-            LinearLayout info = vbox(1);
+
+            LinearLayout info = vbox();
             info.addView(tv("واحد " + fa(u.number) + " — طبقه " + fa(u.floor),13,DARK,true));
-            String who = TextUtils.isEmpty(u.tenant) ? u.owner : u.tenant;
-            info.addView(tv(TextUtils.isEmpty(who) ? "اطلاعات ساکن ثبت نشده" : who,10,MUTED,false));
-            info.addView(tv(u.submeter ? "دارای کنتور فرعی آب" : "بدون کنتور فرعی آب",9,u.submeter?BROWN:MUTED,false));
+            info.addView(tv(emptyDash(u.residentName()),10,MUTED,false));
+            String meter=u.submeter?"دارای کنتور فرعی آب":"بدون کنتور فرعی آب";
+            info.addView(tv(meter,9,u.submeter?BROWN:MUTED,false));
             row.addView(info,new LinearLayout.LayoutParams(0,-2,1f));
+
             Button e = button("ویرایش",BROWN,CREAM2,true);
-            e.setOnClickListener(new View.OnClickListener(){ @Override public void onClick(View v){ editUnit(n); }});
+            e.setOnClickListener(v -> editUnit(n));
             row.addView(e,lp(dp(70),dp(38)));
             body.addView(row,rowParams());
         }
@@ -300,241 +389,593 @@ public class MainActivity extends Activity {
     private void editUnit(final int number) {
         final DataStore.UnitInfo u = store.getUnit(number);
         if (u == null) return;
-        LinearLayout form = vbox(4);
-        form.setPadding(dp(14),dp(4),dp(14),dp(4));
-        final EditText owner = edit("نام مالک",u.owner,InputType.TYPE_CLASS_TEXT);
-        final EditText ownerPhone = edit("شماره موبایل مالک",u.ownerPhone,InputType.TYPE_CLASS_PHONE);
-        final EditText tenant = edit("نام مستأجر",u.tenant,InputType.TYPE_CLASS_TEXT);
-        final EditText tenantPhone = edit("شماره موبایل مستأجر",u.tenantPhone,InputType.TYPE_CLASS_PHONE);
-        final EditText persons = edit("تعداد نفرات",String.valueOf(u.occupants),InputType.TYPE_CLASS_NUMBER);
-        final CheckBox meter = new CheckBox(this);
-        meter.setText("این واحد کنتور فرعی آب دارد");
-        meter.setChecked(u.submeter);
-        meter.setTypeface(font);
-        meter.setTextColor(TEXT);
-        final EditText last = edit("آخرین عدد کنتور فرعی",trim(u.lastWaterReading),InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        final EditText notes = edit("توضیحات",u.notes,InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        form.addView(owner); form.addView(ownerPhone); form.addView(tenant); form.addView(tenantPhone);
-        form.addView(persons); form.addView(meter); form.addView(last); form.addView(notes);
 
-        new AlertDialog.Builder(this)
-                .setTitle("پروفایل واحد " + fa(number))
+        LinearLayout form = vbox();
+        form.setPadding(dp(14),dp(4),dp(14),dp(8));
+
+        final EditText owner = labeledField(form,"نام مالک",u.owner,InputType.TYPE_CLASS_TEXT);
+        final EditText ownerPhone = labeledField(form,"شماره موبایل مالک",u.ownerPhone,InputType.TYPE_CLASS_PHONE);
+
+        form.addView(tv("وضعیت سکونت",11,DARK,true));
+        final RadioGroup occGroup = new RadioGroup(this);
+        occGroup.setOrientation(RadioGroup.VERTICAL);
+        occGroup.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        final RadioButton ownerOcc=radio("مالک ساکن است");
+        final RadioButton tenantOcc=radio("واحد در اختیار مستأجر است");
+        final RadioButton vacantOcc=radio("واحد خالی است");
+        occGroup.addView(ownerOcc); occGroup.addView(tenantOcc); occGroup.addView(vacantOcc);
+        form.addView(occGroup);
+
+        final LinearLayout tenantBox=vbox();
+        final EditText tenant = labeledField(tenantBox,"نام مستأجر",u.tenant,InputType.TYPE_CLASS_TEXT);
+        final EditText tenantPhone = labeledField(tenantBox,"شماره موبایل مستأجر",u.tenantPhone,InputType.TYPE_CLASS_PHONE);
+        form.addView(tenantBox);
+
+        final EditText persons = labeledField(form,"تعداد نفرات ساکن",String.valueOf(u.occupants),InputType.TYPE_CLASS_NUMBER);
+
+        final CheckBox meter = check("این واحد کنتور فرعی آب دارد",u.submeter);
+        form.addView(meter);
+
+        final LinearLayout meterBox=vbox();
+        final EditText last = labeledField(meterBox,"آخرین عدد کنتور فرعی / عدد مبنای اولیه",trim(u.lastWaterReading),
+                InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        form.addView(meterBox);
+
+        final EditText notes = labeledField(form,"توضیحات",u.notes,InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        notes.setMinLines(2);
+
+        if(DataStore.OCC_TENANT.equals(u.occupancy)) tenantOcc.setChecked(true);
+        else if(DataStore.OCC_VACANT.equals(u.occupancy)) vacantOcc.setChecked(true);
+        else ownerOcc.setChecked(true);
+
+        Runnable refresh=()->{
+            boolean tenantMode=tenantOcc.isChecked();
+            boolean vacantMode=vacantOcc.isChecked();
+            tenantBox.setVisibility(tenantMode?View.VISIBLE:View.GONE);
+            persons.setEnabled(!vacantMode);
+            if(vacantMode) persons.setText("0");
+            meterBox.setVisibility(meter.isChecked()?View.VISIBLE:View.GONE);
+        };
+        occGroup.setOnCheckedChangeListener((g,id)->refresh.run());
+        meter.setOnCheckedChangeListener((b,c)->refresh.run());
+        refresh.run();
+
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle("ویرایش واحد " + fa(number))
                 .setView(scroll(form))
                 .setNegativeButton("انصراف",null)
-                .setPositiveButton("ذخیره",new DialogInterface.OnClickListener() {
-                    @Override public void onClick(DialogInterface d,int which) {
-                        u.owner=s(owner); u.ownerPhone=s(ownerPhone); u.tenant=s(tenant); u.tenantPhone=s(tenantPhone);
-                        u.occupants=Math.max(0,safeInt(s(persons),1));
-                        u.submeter=meter.isChecked();
-                        u.lastWaterReading=Math.max(0d,safeDouble(s(last),0d));
-                        u.notes=s(notes);
-                        store.updateUnit(u);
-                        render();
-                        toast("اطلاعات واحد ذخیره شد");
-                    }
-                }).show();
+                .setPositiveButton("ذخیره",null)
+                .create();
+
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            u.owner=s(owner);
+            u.ownerPhone=s(ownerPhone);
+            u.tenant=s(tenant);
+            u.tenantPhone=s(tenantPhone);
+            if(tenantOcc.isChecked()) u.occupancy=DataStore.OCC_TENANT;
+            else if(vacantOcc.isChecked()) u.occupancy=DataStore.OCC_VACANT;
+            else u.occupancy=DataStore.OCC_OWNER;
+            u.occupants=DataStore.OCC_VACANT.equals(u.occupancy)?0:Math.max(0,safeInt(s(persons),1));
+            u.submeter=meter.isChecked();
+            u.lastWaterReading=Math.max(0d,safeDouble(s(last),0d));
+            u.notes=s(notes);
+            store.updateUnit(u);
+            dialog.dismiss();
+            showUnits();
+            toast("اطلاعات واحد ذخیره شد");
+        }));
+        dialog.show();
+    }
+
+    private RadioButton radio(String label) {
+        RadioButton r=new RadioButton(this);
+        r.setText(label);
+        r.setTextColor(TEXT);
+        r.setTextSize(12);
+        r.setTypeface(font);
+        return r;
+    }
+
+    private CheckBox check(String label, boolean checked) {
+        CheckBox c=new CheckBox(this);
+        c.setText(label);
+        c.setTextColor(TEXT);
+        c.setTextSize(12);
+        c.setTypeface(font);
+        c.setChecked(checked);
+        return c;
+    }
+
+    private EditText labeledField(LinearLayout parent,String label,String value,int type) {
+        TextView l=tv(label,10,MUTED,false);
+        l.setPadding(dp(2),dp(5),dp(2),dp(2));
+        parent.addView(l);
+        EditText e=edit("",value,type);
+        parent.addView(e,rowParams());
+        return e;
     }
 
     private void showFinance() {
-        LinearLayout body = vbox(8);
+        LinearLayout body = vbox();
         body.setPadding(dp(10),dp(12),dp(10),dp(16));
         body.addView(tv("مدیریت مالی",18,DARK,true));
-        body.addView(menuButton("شارژ ماهانه","مبلغ شارژ و وضعیت پرداخت ۱۲ واحد",new View.OnClickListener(){@Override public void onClick(View v){showCharge();}}));
-        body.addView(menuButton("قبض آب","محاسبه کنتورهای فرعی و تقسیم باقیمانده",new View.OnClickListener(){@Override public void onClick(View v){showWater();}}));
-        body.addView(menuButton("هزینه‌های ساختمان","برق عمومی، نگهبان، نظافت، تعمیرات و ...",new View.OnClickListener(){@Override public void onClick(View v){showExpenses();}}));
-        body.addView(menuButton("صندوق بلوک","موجودی، دریافتی‌ها و هزینه‌ها",new View.OnClickListener(){@Override public void onClick(View v){showFund();}}));
-        body.addView(menuButton("تنظیم متن پیامک","متن یادآوری بدهی مالک یا مستأجر",new View.OnClickListener(){@Override public void onClick(View v){showSmsSettings();}}));
+        body.addView(menuButton("شارژ ماهانه","ثبت مبلغ، تاریخ و پرداخت چندماهه",v->showCharge()));
+        body.addView(menuButton("قبض آب","مصرف، هزینه عمومی و کنتورهای فرعی",v->showWater()));
+        body.addView(menuButton("هزینه‌های ساختمان","برق عمومی، نگهبان، نظافت، تعمیرات و ...",v->showExpenses()));
+        body.addView(menuButton("صندوق بلوک","موجودی، دریافتی‌ها و هزینه‌ها",v->showFund()));
+        body.addView(menuButton("تنظیم متن پیامک","متن یادآوری بدهی مالک یا مستأجر",v->showSmsSettings()));
+        body.addView(menuButton("پشتیبان‌گیری","خروجی و بازیابی اطلاعات برنامه",v->showBackup()));
         setPage("finance",scroll(body));
     }
 
     private View menuButton(String title,String desc,View.OnClickListener listener) {
-        LinearLayout r=hbox(); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(dp(12),dp(10),dp(12),dp(10));
+        LinearLayout r=hbox();
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setPadding(dp(12),dp(10),dp(12),dp(10));
         r.setBackground(round(Color.WHITE,11,1,Color.rgb(224,207,185)));
-        LinearLayout info=vbox(1); info.addView(tv(title,14,DARK,true)); info.addView(tv(desc,10,MUTED,false));
+        LinearLayout info=vbox();
+        info.addView(tv(title,14,DARK,true));
+        info.addView(tv(desc,10,MUTED,false));
         r.addView(info,new LinearLayout.LayoutParams(0,-2,1f));
-        TextView arrow=center("‹",28,BROWN,true); r.addView(arrow,lp(dp(34),dp(38)));
+        TextView arrow=center("‹",28,BROWN,true);
+        r.addView(arrow,lp(dp(34),dp(38)));
         r.setOnClickListener(listener);
-        LinearLayout.LayoutParams p=rowParams(); r.setLayoutParams(p);
+        r.setLayoutParams(rowParams());
         return r;
     }
 
     private void showCharge() {
-        final DataStore.MonthData md=store.getMonth(monthKey);
-        LinearLayout body=vbox(6); body.setPadding(dp(10),dp(10),dp(10),dp(16));
+        DataStore.MonthData md=store.getMonth(monthKey);
+        LinearLayout body=vbox();
+        body.setPadding(dp(10),dp(10),dp(10),dp(16));
         body.addView(pageTitle("شارژ " + PersianDate.monthLabel(monthKey)));
-        final EditText amount=edit("مبلغ شارژ هر واحد (تومان)",md.chargeAmount>0?String.valueOf(md.chargeAmount):"",InputType.TYPE_CLASS_NUMBER);
-        body.addView(amount);
-        Button save=button("ذخیره مبلغ شارژ",Color.WHITE,BROWN,true);
-        save.setOnClickListener(new View.OnClickListener(){@Override public void onClick(View v){
-            long x=safeLong(s(amount),-1); if(x<0){toast("مبلغ شارژ را صحیح وارد کنید");return;}
-            store.setChargeAmount(monthKey,x); showCharge(); toast("مبلغ شارژ ذخیره شد");
-        }});
+
+        final EditText amount=moneyEdit("مبلغ شارژ هر واحد (تومان)",md.chargeAmount>0?String.valueOf(md.chargeAmount):"");
+        body.addView(amount,rowParams());
+
+        Button save=button("ذخیره مبلغ شارژ ماهانه",Color.WHITE,BROWN,true);
+        save.setOnClickListener(v->{
+            long x=safeLong(s(amount),-1);
+            if(x<0){toast("مبلغ شارژ را صحیح وارد کنید");return;}
+            store.setChargeAmount(monthKey,x);
+            showCharge();
+            toast("مبلغ شارژ ذخیره شد");
+        });
         body.addView(save,buttonParams());
+
+        body.addView(tv("برای ثبت پرداخت، روی دکمه هر واحد بزنید. پرداخت می‌تواند چند ماه را یکجا پوشش دهد.",10,MUTED,false));
         body.addView(tv("وضعیت پرداخت واحدها",14,DARK,true));
+
         for(int n=1;n<=12;n++){
             final int unit=n;
-            LinearLayout r=payRow("واحد "+fa(n),md.chargeAmount>0?money(md.chargeAmount):"ابتدا مبلغ شارژ را ثبت کنید");
-            Switch sw=new Switch(this); sw.setChecked(store.isChargePaid(monthKey,n)); sw.setEnabled(md.chargeAmount>0); sw.setTypeface(font);
-            sw.setOnCheckedChangeListener((b,checked)->{store.setChargePaid(monthKey,unit,checked);});
-            r.addView(sw); body.addView(r,rowParams());
+            long due=store.chargeDue(monthKey,n);
+            long paid=store.chargePaidAmount(monthKey,n);
+            long remain=Math.max(0,due-paid);
+            int st=store.chargeStatus(monthKey,n);
+
+            LinearLayout r=hbox();
+            r.setGravity(Gravity.CENTER_VERTICAL);
+            r.setPadding(dp(10),dp(8),dp(10),dp(8));
+            r.setBackground(round(Color.WHITE,10,1,Color.rgb(224,207,185)));
+
+            LinearLayout info=vbox();
+            info.addView(tv("واحد "+fa(n),12,TEXT,true));
+            String status=st==0?"شارژ تعیین نشده":st==1?"پرداخت نشده":st==2?"پرداخت ناقص":"تسویه";
+            int col=st==3?GREEN:(st==2?ORANGE:(st==1?RED:MUTED));
+            info.addView(tv(status+" — مانده "+money(remain),9,col,false));
+            r.addView(info,new LinearLayout.LayoutParams(0,-2,1f));
+
+            Button pay=button("ثبت پرداخت",Color.WHITE,BROWN,true);
+            pay.setEnabled(due>0);
+            pay.setAlpha(due>0?1f:.45f);
+            pay.setOnClickListener(v->showChargePaymentDialog(unit));
+            r.addView(pay,lp(dp(92),dp(38)));
+            body.addView(r,rowParams());
         }
+
         setPage("charge",scroll(body));
     }
 
-    private void showWater() {
-        final DataStore.MonthData md=store.getMonth(monthKey);
-        final LinearLayout body=vbox(6); body.setPadding(dp(10),dp(10),dp(10),dp(16));
-        body.addView(pageTitle("قبض آب " + PersianDate.monthLabel(monthKey)));
-        body.addView(tv("مبلغ کل قبض و کارکرد کل کنتور اصلی را وارد کنید. سهم واحدهای دارای کنتور فرعی از روی مصرفشان حساب می‌شود و باقی قبض بین واحدهای بدون کنتور تقسیم می‌شود.",10,MUTED,false));
-        final EditText bill=edit("مبلغ کل قبض آب (تومان)",md.waterBillAmount>0?String.valueOf(md.waterBillAmount):"",InputType.TYPE_CLASS_NUMBER);
-        final EditText main=edit("کارکرد کل کنتور اصلی",md.mainWaterConsumption>0?trim(md.mainWaterConsumption):"",InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        body.addView(bill); body.addView(main);
+    private void showChargePaymentDialog(final int unit) {
+        if(store.chargeDue(monthKey,unit)<=0){toast("ابتدا مبلغ شارژ این ماه را تعیین کنید");return;}
 
-        final Map<Integer,EditText> prev=new HashMap<>();
-        final Map<Integer,EditText> cur=new HashMap<>();
+        LinearLayout form=vbox();
+        form.setPadding(dp(14),dp(4),dp(14),dp(8));
+
+        final EditText date=labeledField(form,"تاریخ پرداخت",PersianDate.todayKey(),InputType.TYPE_CLASS_TEXT);
+        final EditText amount=moneyEdit("مبلغ پرداختی (تومان)","");
+        form.addView(tv("مبلغ پرداختی",10,MUTED,false));
+        form.addView(amount,rowParams());
+
+        form.addView(tv("شروع تخصیص پرداخت",10,MUTED,false));
+        LinearLayout monthPicker=hbox();
+        final String[] start={monthKey};
+        Button next=button("›",BROWN,CREAM2,true);
+        TextView label=center(PersianDate.monthLabel(start[0]),12,DARK,true);
+        Button prev=button("‹",BROWN,CREAM2,true);
+        next.setOnClickListener(v->{start[0]=PersianDate.shiftMonth(start[0],1);label.setText(PersianDate.monthLabel(start[0]));});
+        prev.setOnClickListener(v->{start[0]=PersianDate.shiftMonth(start[0],-1);label.setText(PersianDate.monthLabel(start[0]));});
+        monthPicker.addView(next,lp(dp(48),dp(40)));
+        monthPicker.addView(label,new LinearLayout.LayoutParams(0,dp(40),1f));
+        monthPicker.addView(prev,lp(dp(48),dp(40)));
+        form.addView(monthPicker,rowParams());
+
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle("پرداخت شارژ واحد "+fa(unit))
+                .setView(form)
+                .setNegativeButton("انصراف",null)
+                .setPositiveButton("پیش‌نمایش",null)
+                .create();
+
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            long value=safeLong(s(amount),-1);
+            if(value<=0){toast("مبلغ پرداختی را وارد کنید");return;}
+            try{
+                DataStore.ChargePreview p=store.previewChargePayment(unit,start[0],value);
+                StringBuilder msg=new StringBuilder();
+                for(Map.Entry<String,Long> e:p.allocations.entrySet()){
+                    long due=store.getMonth(e.getKey()).chargeAmount;
+                    if(due<=0) due=store.getMonth(start[0]).chargeAmount;
+                    msg.append("• ").append(PersianDate.monthLabel(e.getKey())).append(": ")
+                            .append(money(e.getValue()));
+                    if(e.getValue()<due) msg.append(" (پرداخت ناقص)");
+                    msg.append("\n");
+                }
+                if(p.credit>0) msg.append("\nبستانکاری باقی‌مانده: ").append(money(p.credit));
+
+                new AlertDialog.Builder(this)
+                        .setTitle("پیش‌نمایش تخصیص")
+                        .setMessage(msg.length()==0?"مبلغی برای تخصیص پیدا نشد.":msg.toString())
+                        .setNegativeButton("برگشت",null)
+                        .setPositiveButton("ثبت نهایی",(dd,ww)->{
+                            store.recordChargePayment(unit,s(date),start[0],value);
+                            dialog.dismiss();
+                            showCharge();
+                            toast("پرداخت ثبت شد");
+                        }).show();
+            }catch(Exception ex){alert("خطا",ex.getMessage()==null?"اطلاعات را بررسی کنید":ex.getMessage());}
+        }));
+        dialog.show();
+    }
+
+    private void showWater() {
+        DataStore.MonthData md=store.getMonth(monthKey);
+        LinearLayout body=vbox();
+        body.setPadding(dp(10),dp(10),dp(10),dp(16));
+        body.addView(pageTitle("قبض آب " + PersianDate.monthLabel(monthKey)));
+        body.addView(tv("هزینه عمومی قبض بین همه واحدها تقسیم می‌شود. هزینه مصرف بر اساس کارکرد کل قبض و کنتورهای فرعی محاسبه می‌شود.",10,MUTED,false));
+
+        final EditText consumptionAmount=moneyEdit("هزینه مصرف آب (تومان)",md.waterConsumptionAmount>0?String.valueOf(md.waterConsumptionAmount):"");
+        final EditText generalAmount=moneyEdit("هزینه عمومی: فاضلاب، مالیات، آبونمان و ...",md.waterGeneralAmount>0?String.valueOf(md.waterGeneralAmount):"");
+        final EditText main=edit("کارکرد کل درج‌شده روی قبض",md.mainWaterConsumption>0?trim(md.mainWaterConsumption):"",
+                InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        body.addView(consumptionAmount,rowParams());
+        body.addView(generalAmount,rowParams());
+        body.addView(main,rowParams());
+
+        final CheckBox byPeople=check("باقی‌مانده مصرف واحدهای بدون کنتور بر اساس تعداد نفرات تقسیم شود",md.waterSplitByOccupants);
+        body.addView(byPeople);
+
+        final Map<Integer,EditText> currents=new HashMap<>();
         boolean anyMeter=false;
         for(DataStore.UnitInfo u:store.getUnits()){
             if(!u.submeter) continue;
             anyMeter=true;
-            TextView uh=tv("کنتور فرعی واحد "+fa(u.number),12,DARK,true); uh.setPadding(0,dp(6),0,0); body.addView(uh);
-            LinearLayout rr=hbox();
-            EditText p=edit("عدد قبلی",trim(store.savedPreviousReading(monthKey,u.number,u.lastWaterReading)),InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
-            EditText c=edit("عدد جدید",trim(store.savedCurrentReading(monthKey,u.number,u.lastWaterReading)),InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
-            rr.addView(p,fieldParams()); rr.addView(c,fieldParams()); body.addView(rr);
-            prev.put(u.number,p); cur.put(u.number,c);
+            body.addView(tv("کنتور فرعی واحد "+fa(u.number),12,DARK,true));
+            double prev=store.previousReadingForUnit(monthKey,u.number);
+            body.addView(tv("عدد قبلی ثبت‌شده: "+PersianDate.toFaDigits(trim(prev)),10,MUTED,false));
+            EditText c=edit("عدد جدید کنتور",trim(store.savedCurrentReading(monthKey,u.number)),
+                    InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+            body.addView(c,rowParams());
+            currents.put(u.number,c);
         }
-        if(!anyMeter) body.addView(tv("در حال حاضر هیچ واحدی کنتور فرعی ندارد؛ کل قبض بین ۱۲ واحد تقسیم می‌شود.",10,BROWN,false));
+        if(!anyMeter) body.addView(tv("هیچ واحدی کنتور فرعی ندارد؛ هزینه مصرف با روش انتخاب‌شده بین واحدها تقسیم می‌شود.",10,BROWN,false));
 
-        Button calc=button("محاسبه و ذخیره قبض",Color.WHITE,BROWN,true);
-        calc.setOnClickListener(new View.OnClickListener(){@Override public void onClick(View v){
-            long total=safeLong(s(bill),-1); double cons=safeDouble(s(main),-1);
-            Map<Integer,DataStore.Reading> readings=new HashMap<>();
-            for(DataStore.UnitInfo u:store.getUnits()){
-                if(!u.submeter) continue;
-                double p=safeDouble(s(prev.get(u.number)),-1); double c=safeDouble(s(cur.get(u.number)),-1);
-                readings.put(u.number,new DataStore.Reading(p,c));
+        Button calc=button("محاسبه و پیش‌نمایش قبض",Color.WHITE,BROWN,true);
+        calc.setOnClickListener(v->{
+            long consAmount=safeLong(s(consumptionAmount),-1);
+            long genAmount=safeLong(s(generalAmount),-1);
+            double totalUse=safeDouble(s(main),-1);
+            Map<Integer,Double> readings=new HashMap<>();
+            for(DataStore.UnitInfo u:store.getUnits()) if(u.submeter) {
+                EditText e=currents.get(u.number);
+                readings.put(u.number,safeDouble(s(e),-1));
             }
             try{
-                store.saveWaterBill(monthKey,total,cons,readings);
-                showWater(); toast("قبض آب محاسبه و ذخیره شد");
-            }catch(Exception ex){ alert("خطا در محاسبه",ex.getMessage()==null?"اطلاعات واردشده را بررسی کنید":ex.getMessage()); }
-        }});
+                DataStore.WaterCalculation r=store.calculateWater(monthKey,consAmount,genAmount,totalUse,byPeople.isChecked(),readings);
+                StringBuilder msg=new StringBuilder();
+                for(int n=1;n<=12;n++){
+                    DataStore.UnitInfo u=store.getUnit(n);
+                    msg.append("واحد ").append(fa(n)).append(": ");
+                    if(u!=null && u.submeter) {
+                        Double use=r.consumptions.get(n);
+                        msg.append("مصرف ").append(PersianDate.toFaDigits(trim(use==null?0d:use))).append(" | ");
+                    }
+                    msg.append("مصرفی ").append(money(mapLong(r.consumptionShares,n)))
+                            .append(" + عمومی ").append(money(mapLong(r.generalShares,n)))
+                            .append(" = ").append(money(mapLong(r.finalShares,n))).append("\n");
+                }
+
+                new AlertDialog.Builder(this)
+                        .setTitle("پیش‌نمایش تقسیم قبض")
+                        .setMessage(msg.toString())
+                        .setNegativeButton("برگشت",null)
+                        .setPositiveButton("ذخیره قبض",(d,w)->{
+                            store.saveWaterBill(monthKey,consAmount,genAmount,totalUse,byPeople.isChecked(),readings);
+                            showWater();
+                            toast("قبض آب ذخیره شد");
+                        }).show();
+            }catch(Exception ex){alert("خطا در محاسبه",ex.getMessage()==null?"اطلاعات واردشده را بررسی کنید":ex.getMessage());}
+        });
         body.addView(calc,buttonParams());
 
-        if(md.waterBillAmount>0){
+        if(md.waterConsumptionAmount>0 || md.waterGeneralAmount>0){
             body.addView(tv("سهم و وضعیت پرداخت واحدها",14,DARK,true));
             for(int n=1;n<=12;n++){
-                final int unit=n; long share=store.waterShare(monthKey,n);
-                LinearLayout r=payRow("واحد "+fa(n),money(share));
-                Switch sw=new Switch(this); sw.setChecked(store.isWaterPaid(monthKey,n)); sw.setTypeface(font);
+                final int unit=n;
+                long share=store.waterShare(monthKey,n);
+                LinearLayout r=payRow("واحد "+fa(n),
+                        "مصرفی "+money(store.waterConsumptionShare(monthKey,n))+" | عمومی "+money(store.waterGeneralShare(monthKey,n))+" | جمع "+money(share));
+                Switch sw=new Switch(this);
+                sw.setChecked(store.isWaterPaid(monthKey,n));
+                sw.setTypeface(font);
                 sw.setOnCheckedChangeListener((b,checked)->store.setWaterPaid(monthKey,unit,checked));
-                r.addView(sw); body.addView(r,rowParams());
+                r.addView(sw);
+                body.addView(r,rowParams());
             }
         }
+
         setPage("water",scroll(body));
     }
 
+    private long mapLong(Map<Integer,Long> m,int key){
+        Long x=m.get(key);
+        return x==null?0L:x;
+    }
+
     private void showExpenses() {
-        LinearLayout body=vbox(6); body.setPadding(dp(10),dp(10),dp(10),dp(16));
+        LinearLayout body=vbox();
+        body.setPadding(dp(10),dp(10),dp(10),dp(16));
         body.addView(pageTitle("هزینه‌های " + PersianDate.monthLabel(monthKey)));
-        final EditText title=edit("عنوان هزینه؛ مثال: برق عمومی", "",InputType.TYPE_CLASS_TEXT);
-        final EditText amount=edit("مبلغ (تومان)","",InputType.TYPE_CLASS_NUMBER);
+
+        final EditText title=edit("عنوان هزینه؛ مثال: برق عمومی","",InputType.TYPE_CLASS_TEXT);
+        final EditText amount=moneyEdit("مبلغ (تومان)","");
         final EditText date=edit("تاریخ",PersianDate.todayKey(),InputType.TYPE_CLASS_TEXT);
-        body.addView(title); body.addView(amount); body.addView(date);
+        body.addView(title,rowParams());
+        body.addView(amount,rowParams());
+        body.addView(date,rowParams());
+
         Button add=button("ثبت هزینه",Color.WHITE,BROWN,true);
-        add.setOnClickListener(new View.OnClickListener(){@Override public void onClick(View v){
-            String t=s(title); long a=safeLong(s(amount),-1);
+        add.setOnClickListener(v->{
+            String t=s(title);
+            long a=safeLong(s(amount),-1);
             if(TextUtils.isEmpty(t)||a<=0){toast("عنوان و مبلغ هزینه را وارد کنید");return;}
-            store.addExpense(monthKey,t,a,s(date)); showExpenses(); toast("هزینه ثبت شد");
-        }});
+            store.addExpense(monthKey,t,a,s(date));
+            showExpenses();
+            toast("هزینه ثبت شد");
+        });
         body.addView(add,buttonParams());
         body.addView(tv("جمع هزینه ماه: "+money(store.monthExpenses(monthKey)),13,DARK,true));
+
         for(final DataStore.Expense e:store.expensesForMonth(monthKey)){
-            LinearLayout r=hbox(); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(dp(10),dp(8),dp(10),dp(8)); r.setBackground(round(Color.WHITE,10,1,Color.rgb(224,207,185)));
-            LinearLayout info=vbox(1); info.addView(tv(e.title,12,TEXT,true)); info.addView(tv(e.date+" — "+money(e.amount),10,MUTED,false));
+            LinearLayout r=hbox();
+            r.setGravity(Gravity.CENTER_VERTICAL);
+            r.setPadding(dp(10),dp(8),dp(10),dp(8));
+            r.setBackground(round(Color.WHITE,10,1,Color.rgb(224,207,185)));
+            LinearLayout info=vbox();
+            info.addView(tv(e.title,12,TEXT,true));
+            info.addView(tv(e.date+" — "+money(e.amount),10,MUTED,false));
             r.addView(info,new LinearLayout.LayoutParams(0,-2,1f));
-            Button del=button("حذف",RED,CREAM2,false); del.setOnClickListener(v->{
-                new AlertDialog.Builder(this).setTitle("حذف هزینه").setMessage("این هزینه حذف شود؟").setNegativeButton("خیر",null).setPositiveButton("بله",(d,w)->{store.deleteExpense(e.id);showExpenses();}).show();
-            });
-            r.addView(del,lp(dp(60),dp(36))); body.addView(r,rowParams());
+            Button del=button("حذف",RED,CREAM2,false);
+            del.setOnClickListener(v->new AlertDialog.Builder(this)
+                    .setTitle("حذف هزینه")
+                    .setMessage("این هزینه حذف شود؟")
+                    .setNegativeButton("خیر",null)
+                    .setPositiveButton("بله",(d,w)->{store.deleteExpense(e.id);showExpenses();})
+                    .show());
+            r.addView(del,lp(dp(60),dp(36)));
+            body.addView(r,rowParams());
         }
         setPage("expenses",scroll(body));
     }
 
     private void showFund() {
-        LinearLayout body=vbox(7); body.setPadding(dp(10),dp(10),dp(10),dp(16));
+        LinearLayout body=vbox();
+        body.setPadding(dp(10),dp(10),dp(10),dp(16));
         body.addView(pageTitle("صندوق بلوک"));
-        LinearLayout big=vbox(3); big.setGravity(Gravity.CENTER); big.setPadding(dp(10),dp(18),dp(10),dp(18)); big.setBackground(round(DARK,14,0,0));
+
+        LinearLayout big=vbox();
+        big.setGravity(Gravity.CENTER);
+        big.setPadding(dp(10),dp(18),dp(10),dp(18));
+        big.setBackground(round(DARK,14,0,0));
         big.addView(center("موجودی فعلی صندوق",12,Color.WHITE,false));
         big.addView(center(money(store.fundBalance()),22,GOLD,true));
         body.addView(big,rowParams());
+
         body.addView(tv("کل دریافتی ثبت‌شده: "+money(store.totalIncome()),12,GREEN,false));
         body.addView(tv("کل هزینه ثبت‌شده: "+money(store.totalExpenses()),12,RED,false));
-        final EditText initial=edit("موجودی اولیه صندوق",String.valueOf(store.getInitialFund()),InputType.TYPE_CLASS_NUMBER);
-        body.addView(initial);
+
+        final EditText initial=moneyEdit("موجودی اولیه صندوق",String.valueOf(store.getInitialFund()));
+        body.addView(initial,rowParams());
         Button save=button("ذخیره موجودی اولیه",Color.WHITE,BROWN,true);
-        save.setOnClickListener(v->{long x=safeLong(s(initial),-1);if(x<0){toast("عدد صحیح وارد کنید");return;}store.setInitialFund(x);showFund();});
+        save.setOnClickListener(v->{
+            long x=safeLong(s(initial),-1);
+            if(x<0){toast("عدد صحیح وارد کنید");return;}
+            store.setInitialFund(x);
+            showFund();
+        });
         body.addView(save,buttonParams());
         setPage("fund",scroll(body));
     }
 
     private void showSmsSettings() {
-        LinearLayout body=vbox(7); body.setPadding(dp(10),dp(10),dp(10),dp(16));
+        LinearLayout body=vbox();
+        body.setPadding(dp(10),dp(10),dp(10),dp(16));
         body.addView(pageTitle("تنظیم متن پیامک"));
-        body.addView(tv("متغیرهای قابل استفاده: {نام}  {واحد}  {ماه}  {مبلغ}",10,MUTED,false));
+        body.addView(tv("متغیرها: {نام}  {واحد}  {ماه}  {مبلغ}",10,MUTED,false));
+
         final EditText msg=edit("متن پیامک",store.getSmsTemplate(),InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        msg.setMinLines(5); body.addView(msg);
+        msg.setMinLines(5);
+        body.addView(msg,rowParams());
+
         Button save=button("ذخیره متن پیامک",Color.WHITE,BROWN,true);
-        save.setOnClickListener(v->{if(TextUtils.isEmpty(s(msg))){toast("متن پیامک خالی است");return;}store.setSmsTemplate(s(msg));toast("متن پیامک ذخیره شد");});
+        save.setOnClickListener(v->{
+            if(TextUtils.isEmpty(s(msg))){toast("متن پیامک خالی است");return;}
+            store.setSmsTemplate(s(msg));
+            toast("متن پیامک ذخیره شد");
+        });
         body.addView(save,buttonParams());
         setPage("sms",scroll(body));
     }
 
+    private void showBackup() {
+        LinearLayout body=vbox();
+        body.setPadding(dp(12),dp(12),dp(12),dp(20));
+        body.addView(pageTitle("پشتیبان‌گیری اطلاعات"));
+        body.addView(tv("برای حفظ اطلاعات واقعی ساختمان، هر چند وقت یکبار فایل پشتیبان بگیرید.",10,MUTED,false));
+
+        Button export=button("ذخیره فایل پشتیبان",Color.WHITE,BROWN,true);
+        export.setOnClickListener(v->{
+            Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("application/json");
+            i.putExtra(Intent.EXTRA_TITLE,"Hamyar-A1-Backup-"+PersianDate.todayKey().replace("/","-")+".json");
+            startActivityForResult(i,REQ_BACKUP_CREATE);
+        });
+        body.addView(export,buttonParams());
+
+        Button restore=button("بازیابی از فایل پشتیبان",BROWN,CREAM2,true);
+        restore.setOnClickListener(v->new AlertDialog.Builder(this)
+                .setTitle("بازیابی اطلاعات")
+                .setMessage("اطلاعات فعلی با محتوای فایل پشتیبان جایگزین می‌شود. ادامه می‌دهید؟")
+                .setNegativeButton("انصراف",null)
+                .setPositiveButton("انتخاب فایل",(d,w)->{
+                    Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    i.addCategory(Intent.CATEGORY_OPENABLE);
+                    i.setType("application/json");
+                    startActivityForResult(i,REQ_BACKUP_OPEN);
+                }).show());
+        body.addView(restore,buttonParams());
+
+        setPage("backup",scroll(body));
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode,int resultCode,Intent data) {
+        super.onActivityResult(requestCode,resultCode,data);
+        if(resultCode!=RESULT_OK || data==null || data.getData()==null) return;
+        Uri uri=data.getData();
+        try{
+            if(requestCode==REQ_BACKUP_CREATE){
+                OutputStream out=getContentResolver().openOutputStream(uri);
+                if(out==null) throw new Exception("فایل باز نشد");
+                out.write(store.exportJson().getBytes("UTF-8"));
+                out.flush();
+                out.close();
+                toast("فایل پشتیبان ذخیره شد");
+            } else if(requestCode==REQ_BACKUP_OPEN){
+                InputStream in=getContentResolver().openInputStream(uri);
+                if(in==null) throw new Exception("فایل باز نشد");
+                BufferedReader br=new BufferedReader(new InputStreamReader(in,"UTF-8"));
+                StringBuilder sb=new StringBuilder();
+                String line;
+                while((line=br.readLine())!=null) sb.append(line).append('\n');
+                br.close();
+                store.importJson(sb.toString());
+                monthKey=PersianDate.currentMonthKey();
+                if(monthLabel!=null) monthLabel.setText(PersianDate.monthLabel(monthKey));
+                showDashboard();
+                toast("اطلاعات پشتیبان بازیابی شد");
+            }
+        }catch(Exception e){alert("خطای پشتیبان‌گیری",e.getMessage()==null?"عملیات انجام نشد":e.getMessage());}
+    }
+
     private void showReports() {
-        LinearLayout body=vbox(7); body.setPadding(dp(10),dp(10),dp(10),dp(16));
+        LinearLayout body=vbox();
+        body.setPadding(dp(10),dp(10),dp(10),dp(16));
         body.addView(tv("گزارش مالی " + PersianDate.monthLabel(monthKey),18,DARK,true));
+
         report(body,"شارژ تعیین‌شده",store.monthChargeDue(monthKey));
         report(body,"شارژ وصول‌شده",store.monthChargePaid(monthKey));
         report(body,"آب تعیین‌شده",store.monthWaterDue(monthKey));
         report(body,"آب وصول‌شده",store.monthWaterPaid(monthKey));
         report(body,"هزینه‌های ماه",store.monthExpenses(monthKey));
-        report(body,"مطالبات باقی‌مانده",store.monthDebt(monthKey));
+        report(body,"بدهی همین ماه",store.monthDebt(monthKey));
+        report(body,"کل مطالبات تا این ماه",store.totalDebtThrough(monthKey));
         report(body,"موجودی صندوق",store.fundBalance());
+
         body.addView(tv("واحدهای بدهکار",14,DARK,true));
         boolean any=false;
         for(int n=1;n<=12;n++){
-            long debt=store.unitDebt(monthKey,n);
+            long debt=store.unitTotalDebtThrough(monthKey,n);
             if(debt<=0) continue;
-            any=true; final int unit=n;
+            any=true;
+            final int unit=n;
             LinearLayout r=payRow("واحد "+fa(n),money(debt));
-            Button sms=button("پیامک",Color.WHITE,BROWN,true); sms.setOnClickListener(v->sendUnitReminder(unit));
-            r.addView(sms,lp(dp(66),dp(36))); body.addView(r,rowParams());
+            Button sms=button("پیامک",Color.WHITE,BROWN,true);
+            sms.setOnClickListener(v->sendUnitReminder(unit));
+            r.addView(sms,lp(dp(66),dp(36)));
+            body.addView(r,rowParams());
         }
-        if(!any) body.addView(tv("برای این ماه بدهی ثبت‌شده‌ای وجود ندارد.",11,GREEN,false));
+        if(!any) body.addView(tv("تا این ماه بدهی ثبت‌شده‌ای وجود ندارد.",11,GREEN,false));
         setPage("reports",scroll(body));
     }
 
     private void report(LinearLayout body,String label,long value) {
-        LinearLayout r=hbox(); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(dp(10),dp(9),dp(10),dp(9)); r.setBackground(round(Color.WHITE,9,1,Color.rgb(225,208,187)));
+        LinearLayout r=hbox();
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setPadding(dp(10),dp(9),dp(10),dp(9));
+        r.setBackground(round(Color.WHITE,9,1,Color.rgb(225,208,187)));
         r.addView(tv(label,11,TEXT,false),new LinearLayout.LayoutParams(0,-2,1f));
-        r.addView(tv(money(value),12,DARK,true)); body.addView(r,rowParams());
+        r.addView(tv(money(value),12,DARK,true));
+        body.addView(r,rowParams());
     }
 
     private void sendUnitReminder(int number) {
-        DataStore.UnitInfo u=store.getUnit(number); if(u==null)return;
-        long debt=store.unitDebt(monthKey,number); if(debt<=0){toast("برای این واحد بدهی ثبت نشده است");return;}
-        final List<String> phones=new ArrayList<>(); final List<String> names=new ArrayList<>(); final List<String> labels=new ArrayList<>();
-        if(!TextUtils.isEmpty(u.ownerPhone)){phones.add(u.ownerPhone);names.add(TextUtils.isEmpty(u.owner)?"مالک محترم":u.owner);labels.add("مالک: "+(TextUtils.isEmpty(u.owner)?u.ownerPhone:u.owner));}
-        if(!TextUtils.isEmpty(u.tenantPhone)){phones.add(u.tenantPhone);names.add(TextUtils.isEmpty(u.tenant)?"ساکن محترم":u.tenant);labels.add("مستأجر: "+(TextUtils.isEmpty(u.tenant)?u.tenantPhone:u.tenant));}
+        DataStore.UnitInfo u=store.getUnit(number);
+        if(u==null) return;
+        long debt=store.unitTotalDebtThrough(monthKey,number);
+        if(debt<=0){toast("برای این واحد بدهی ثبت نشده است");return;}
+
+        final List<String> phones=new ArrayList<>();
+        final List<String> names=new ArrayList<>();
+        final List<String> labels=new ArrayList<>();
+
+        if(!TextUtils.isEmpty(u.ownerPhone)){
+            phones.add(u.ownerPhone);
+            names.add(TextUtils.isEmpty(u.owner)?"مالک محترم":u.owner);
+            labels.add("مالک: "+(TextUtils.isEmpty(u.owner)?u.ownerPhone:u.owner));
+        }
+        if(DataStore.OCC_TENANT.equals(u.occupancy) && !TextUtils.isEmpty(u.tenantPhone)){
+            phones.add(u.tenantPhone);
+            names.add(TextUtils.isEmpty(u.tenant)?"مستأجر محترم":u.tenant);
+            labels.add("مستأجر: "+(TextUtils.isEmpty(u.tenant)?u.tenantPhone:u.tenant));
+        }
+
         if(phones.isEmpty()){toast("شماره موبایل مالک یا مستأجر ثبت نشده است");return;}
-        if(phones.size()==1){openSms(phones.get(0),reminder(names.get(0),number,debt));return;}
-        new AlertDialog.Builder(this).setTitle("ارسال پیامک به").setItems(labels.toArray(new String[0]),(d,w)->openSms(phones.get(w),reminder(names.get(w),number,debt))).show();
+        if(phones.size()==1){previewSms(phones.get(0),reminder(names.get(0),number,debt));return;}
+
+        new AlertDialog.Builder(this)
+                .setTitle("گیرنده پیامک")
+                .setItems(labels.toArray(new String[0]),(d,w)->previewSms(phones.get(w),reminder(names.get(w),number,debt)))
+                .show();
     }
 
     private String reminder(String name,int unit,long debt) {
-        return store.getSmsTemplate().replace("{نام}",name)
-                .replace("{واحد}",fa(unit)).replace("{ماه}",PersianDate.monthLabel(monthKey))
+        return store.getSmsTemplate()
+                .replace("{نام}",name)
+                .replace("{واحد}",fa(unit))
+                .replace("{ماه}",PersianDate.monthLabel(monthKey))
                 .replace("{مبلغ}",PersianDate.toFaDigits(format(debt)));
+    }
+
+    private void previewSms(String phone,String body) {
+        new AlertDialog.Builder(this)
+                .setTitle("پیش‌نمایش پیامک")
+                .setMessage(body)
+                .setNegativeButton("انصراف",null)
+                .setPositiveButton("ارسال پیامک",(d,w)->openSms(phone,body))
+                .show();
     }
 
     private void openSms(String phone,String body) {
@@ -548,56 +989,131 @@ public class MainActivity extends Activity {
     }
 
     private TextView pageTitle(String title) {
-        TextView t=tv(title,18,DARK,true); t.setPadding(0,0,0,dp(4)); return t;
+        TextView t=tv(title,18,DARK,true);
+        t.setPadding(0,0,0,dp(4));
+        return t;
     }
 
     private LinearLayout payRow(String title,String desc) {
-        LinearLayout r=hbox(); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(dp(10),dp(8),dp(10),dp(8)); r.setBackground(round(Color.WHITE,10,1,Color.rgb(224,207,185)));
-        LinearLayout info=vbox(1); info.addView(tv(title,12,TEXT,true)); info.addView(tv(desc,10,MUTED,false));
-        r.addView(info,new LinearLayout.LayoutParams(0,-2,1f)); return r;
+        LinearLayout r=hbox();
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setPadding(dp(10),dp(8),dp(10),dp(8));
+        r.setBackground(round(Color.WHITE,10,1,Color.rgb(224,207,185)));
+        LinearLayout info=vbox();
+        info.addView(tv(title,12,TEXT,true));
+        info.addView(tv(desc,9,MUTED,false));
+        r.addView(info,new LinearLayout.LayoutParams(0,-2,1f));
+        return r;
     }
 
     private TextView tv(String value,float size,int color,boolean isBold) {
-        TextView t=new TextView(this); t.setText(value==null?"":value); t.setTextSize(size); t.setTextColor(color);
-        t.setTypeface(isBold?bold:font); t.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL); t.setTextDirection(View.TEXT_DIRECTION_RTL); return t;
+        TextView t=new TextView(this);
+        t.setText(value==null?"":value);
+        t.setTextSize(size);
+        t.setTextColor(color);
+        t.setTypeface(isBold?bold:font);
+        t.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+        t.setTextDirection(View.TEXT_DIRECTION_RTL);
+        return t;
     }
 
     private TextView center(String value,float size,int color,boolean isBold) {
-        TextView t=tv(value,size,color,isBold); t.setGravity(Gravity.CENTER); t.setMaxLines(1); t.setEllipsize(TextUtils.TruncateAt.END); return t;
+        TextView t=tv(value,size,color,isBold);
+        t.setGravity(Gravity.CENTER);
+        t.setMaxLines(1);
+        t.setEllipsize(TextUtils.TruncateAt.END);
+        return t;
     }
 
     private EditText edit(String hint,String value,int type) {
-        EditText e=new EditText(this); e.setHint(hint); e.setText(value==null?"":value); e.setTextSize(12); e.setTextColor(TEXT); e.setHintTextColor(Color.rgb(145,130,116));
-        e.setTypeface(font); e.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL); e.setTextDirection(View.TEXT_DIRECTION_RTL); e.setInputType(type);
-        e.setPadding(dp(10),dp(8),dp(10),dp(8)); e.setBackground(round(Color.WHITE,9,1,Color.rgb(216,198,176)));
-        e.setLayoutParams(rowParams()); return e;
+        EditText e=new EditText(this);
+        e.setHint(hint);
+        e.setText(value==null?"":value);
+        e.setTextSize(12);
+        e.setTextColor(TEXT);
+        e.setHintTextColor(Color.rgb(145,130,116));
+        e.setTypeface(font);
+        e.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);
+        e.setTextDirection(View.TEXT_DIRECTION_RTL);
+        e.setInputType(type);
+        e.setPadding(dp(10),dp(8),dp(10),dp(8));
+        e.setBackground(round(Color.WHITE,9,1,Color.rgb(216,198,176)));
+        return e;
+    }
+
+    private EditText moneyEdit(String hint,String value) {
+        final EditText e=edit(hint,"",InputType.TYPE_CLASS_NUMBER);
+        long initial=safeLong(value,0);
+        if(initial>0) e.setText(format(initial));
+        e.addTextChangedListener(new TextWatcher() {
+            boolean editing=false;
+            @Override public void beforeTextChanged(CharSequence s,int start,int count,int after){}
+            @Override public void onTextChanged(CharSequence s,int start,int before,int count){}
+            @Override public void afterTextChanged(Editable editable){
+                if(editing) return;
+                String raw=PersianDate.normalizeDigits(editable.toString()).replace(",","").replace("٬","").replace(" ","");
+                if(raw.isEmpty()) return;
+                try{
+                    long x=Long.parseLong(raw);
+                    String formatted=format(x);
+                    if(!formatted.equals(editable.toString())){
+                        editing=true;
+                        e.setText(formatted);
+                        e.setSelection(e.getText().length());
+                        editing=false;
+                    }
+                }catch(Exception ignored){}
+            }
+        });
+        return e;
     }
 
     private Button button(String label,int color,int bg,boolean isBold) {
-        Button b=new Button(this); b.setText(label); b.setTextColor(color); b.setTextSize(12); b.setAllCaps(false); b.setTypeface(isBold?bold:font); b.setGravity(Gravity.CENTER);
-        if(bg==Color.TRANSPARENT)b.setBackgroundColor(Color.TRANSPARENT);else b.setBackground(round(bg,9,0,0)); return b;
+        Button b=new Button(this);
+        b.setText(label);
+        b.setTextColor(color);
+        b.setTextSize(12);
+        b.setAllCaps(false);
+        b.setTypeface(isBold?bold:font);
+        b.setGravity(Gravity.CENTER);
+        if(bg==Color.TRANSPARENT) b.setBackgroundColor(Color.TRANSPARENT);
+        else b.setBackground(round(bg,9,0,0));
+        return b;
     }
 
-    private LinearLayout vbox(int ignored) {
-        LinearLayout l=new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); l.setLayoutDirection(View.LAYOUT_DIRECTION_RTL); return l;
+    private LinearLayout vbox() {
+        LinearLayout l=new LinearLayout(this);
+        l.setOrientation(LinearLayout.VERTICAL);
+        l.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        return l;
     }
 
     private LinearLayout hbox() {
-        LinearLayout l=new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); l.setLayoutDirection(View.LAYOUT_DIRECTION_RTL); return l;
+        LinearLayout l=new LinearLayout(this);
+        l.setOrientation(LinearLayout.HORIZONTAL);
+        l.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        return l;
     }
 
     private ScrollView scroll(View v) {
-        ScrollView s=new ScrollView(this); s.setFillViewport(true); s.setBackgroundColor(CREAM); s.addView(v,new ScrollView.LayoutParams(-1,-2)); return s;
+        ScrollView s=new ScrollView(this);
+        s.setFillViewport(true);
+        s.setBackgroundColor(CREAM);
+        s.addView(v,new ScrollView.LayoutParams(-1,-2));
+        return s;
     }
 
     private GradientDrawable round(int color,int radiusDp,int strokeDp,int strokeColor) {
-        GradientDrawable g=new GradientDrawable(); g.setColor(color); g.setCornerRadius(dp(radiusDp)); if(strokeDp>0)g.setStroke(dp(strokeDp),strokeColor); return g;
+        GradientDrawable g=new GradientDrawable();
+        g.setColor(color);
+        g.setCornerRadius(dp(radiusDp));
+        if(strokeDp>0) g.setStroke(dp(strokeDp),strokeColor);
+        return g;
     }
 
     private LinearLayout.LayoutParams lp(int w,int h){return new LinearLayout.LayoutParams(w,h);}
     private LinearLayout.LayoutParams rowParams(){LinearLayout.LayoutParams p=lp(-1,-2);p.setMargins(0,dp(4),0,dp(4));return p;}
     private LinearLayout.LayoutParams buttonParams(){LinearLayout.LayoutParams p=lp(-1,dp(46));p.setMargins(0,dp(5),0,dp(8));return p;}
-    private LinearLayout.LayoutParams fieldParams(){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1f);p.setMargins(dp(3),0,dp(3),0);return p;}
 
     private int dp(int x){return Math.round(x*getResources().getDisplayMetrics().density);}
     private String s(EditText e){return e==null?"":e.getText().toString().trim();}
@@ -608,6 +1124,7 @@ public class MainActivity extends Activity {
     private String format(long x){return new DecimalFormat("#,###").format(x);}
     private String money(long x){return PersianDate.toFaDigits(format(x))+" تومان";}
     private String fa(int x){return PersianDate.toFaDigits(String.valueOf(x));}
+    private String emptyDash(String x){return x==null||x.trim().isEmpty()?"—":x;}
     private void toast(String x){Toast.makeText(this,x,Toast.LENGTH_SHORT).show();}
     private void alert(String title,String msg){new AlertDialog.Builder(this).setTitle(title).setMessage(msg).setPositiveButton("باشه",null).show();}
 }
