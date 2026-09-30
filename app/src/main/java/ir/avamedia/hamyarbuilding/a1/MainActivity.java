@@ -231,7 +231,7 @@ public class MainActivity extends Activity {
         body.addView(stats,lp(-1,-2));
         stat(stats,R.drawable.ic_wallet,"موجودی صندوق",store.fundBalance());
         stat(stats,R.drawable.ic_receipt,"مطالبات تا این ماه",store.totalDebtThrough(monthKey));
-        stat(stats,R.drawable.ic_payments,"هزینه ماه",store.monthExpenses(monthKey));
+        stat(stats,R.drawable.ic_expense,"هزینه ماه",store.monthExpenses(monthKey));
 
         TextView h = tv("وضعیت واحدها",18,DARK,true);
         h.setPadding(dp(4),dp(7),dp(4),dp(2));
