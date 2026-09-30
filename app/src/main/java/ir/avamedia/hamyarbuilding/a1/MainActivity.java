@@ -22,6 +22,7 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
@@ -112,7 +113,7 @@ public class MainActivity extends Activity {
         root.requestApplyInsets();
 
         LinearLayout header = vbox();
-        header.setPadding(dp(16),dp(8),dp(16),dp(12));
+        header.setPadding(dp(16),dp(4),dp(16),dp(7));
         header.setBackgroundColor(DARK);
         root.addView(header, lp(-1,-2));
 
@@ -120,11 +121,11 @@ public class MainActivity extends Activity {
         names.setGravity(Gravity.CENTER);
         names.addView(center("همیار ساختمان",22,Color.WHITE,true));
         names.addView(center("بلوک A1 مجتمع فرهیختگان",12,GOLD,false));
-        header.addView(names, lp(-1,dp(66)));
+        header.addView(names, lp(-1,dp(56)));
 
         LinearLayout monthRow = hbox();
         monthRow.setGravity(Gravity.CENTER);
-        header.addView(monthRow, lp(-1,dp(50)));
+        header.addView(monthRow, lp(-1,dp(44)));
 
         Button next = button("ماه بعد ›",Color.WHITE,Color.TRANSPARENT,false);
         next.setOnClickListener(v -> changeMonth(1));
@@ -132,7 +133,7 @@ public class MainActivity extends Activity {
 
         monthLabel = center(PersianDate.monthLabel(monthKey),14,Color.WHITE,true);
         monthLabel.setBackground(round(Color.rgb(78,49,33),13,1,Color.rgb(128,84,55)));
-        monthRow.addView(monthLabel,new LinearLayout.LayoutParams(0,dp(42),1.45f));
+        monthRow.addView(monthLabel,new LinearLayout.LayoutParams(0,dp(38),1.45f));
 
         Button prev = button("‹ ماه قبل",Color.WHITE,Color.TRANSPARENT,false);
         prev.setOnClickListener(v -> changeMonth(-1));
@@ -145,22 +146,22 @@ public class MainActivity extends Activity {
         LinearLayout nav = hbox();
         nav.setPadding(dp(8),dp(6),dp(8),dp(8));
         nav.setBackgroundColor(DARK);
-        root.addView(nav, lp(-1,dp(72)));
-        addNav(nav,"⌂","داشبورد","dashboard");
-        addNav(nav,"▦","واحدها","units");
-        addNav(nav,"₮","مالی","finance");
-        addNav(nav,"▥","گزارش","reports");
+        root.addView(nav, lp(-1,dp(68)));
+        addNav(nav,R.drawable.ic_home,"داشبورد","dashboard");
+        addNav(nav,R.drawable.ic_apartment,"واحدها","units");
+        addNav(nav,R.drawable.ic_wallet,"مالی","finance");
+        addNav(nav,R.drawable.ic_bar_chart,"گزارش","reports");
     }
 
-    private void addNav(LinearLayout nav, String icon, String label, final String target) {
+    private void addNav(LinearLayout nav, int iconRes, String label, final String target) {
         LinearLayout box=vbox();
         box.setGravity(Gravity.CENTER);
         box.setPadding(dp(5),dp(3),dp(5),dp(3));
 
-        TextView i=center(icon,19,Color.rgb(235,221,201),true);
+        ImageView i=iconView(iconRes,Color.rgb(235,221,201),22);
         TextView t=center(label,10,Color.rgb(235,221,201),false);
-        box.addView(i,lp(-1,dp(28)));
-        box.addView(t,lp(-1,dp(25)));
+        box.addView(i,lp(-1,dp(29)));
+        box.addView(t,lp(-1,dp(23)));
         box.setOnClickListener(v -> {
             if ("dashboard".equals(target)) showDashboard();
             else if ("units".equals(target)) showUnits();
@@ -185,8 +186,11 @@ public class MainActivity extends Activity {
             LinearLayout box=e.getValue();
             box.setBackground(on?round(GOLD,14,0,0):round(Color.TRANSPARENT,14,0,0));
             for(int i=0;i<box.getChildCount();i++) {
-                if(box.getChildAt(i) instanceof TextView) {
-                    ((TextView) box.getChildAt(i)).setTextColor(on?DARK:Color.rgb(235,221,201));
+                View child=box.getChildAt(i);
+                if(child instanceof TextView) {
+                    ((TextView) child).setTextColor(on?DARK:Color.rgb(235,221,201));
+                } else if(child instanceof ImageView) {
+                    ((ImageView) child).setColorFilter(on?DARK:Color.rgb(235,221,201));
                 }
             }
         }
@@ -221,18 +225,17 @@ public class MainActivity extends Activity {
 
     private void showDashboard() {
         LinearLayout body = vbox();
-        body.setPadding(dp(10),dp(12),dp(10),dp(18));
+        body.setPadding(dp(8),dp(6),dp(8),dp(8));
 
         LinearLayout stats = hbox();
         body.addView(stats,lp(-1,-2));
-        stat(stats,"◉","موجودی صندوق",store.fundBalance());
-        stat(stats,"⌁","مطالبات تا این ماه",store.totalDebtThrough(monthKey));
-        stat(stats,"−","هزینه ماه",store.monthExpenses(monthKey));
+        stat(stats,R.drawable.ic_wallet,"موجودی صندوق",store.fundBalance());
+        stat(stats,R.drawable.ic_receipt,"مطالبات تا این ماه",store.totalDebtThrough(monthKey));
+        stat(stats,R.drawable.ic_payments,"هزینه ماه",store.monthExpenses(monthKey));
 
-        TextView h = tv("وضعیت واحدها",19,DARK,true);
-        h.setPadding(dp(4),dp(13),dp(4),0);
+        TextView h = tv("وضعیت واحدها",18,DARK,true);
+        h.setPadding(dp(4),dp(7),dp(4),dp(2));
         body.addView(h);
-        body.addView(tv("وضعیت شارژ و آب در " + PersianDate.monthLabel(monthKey),10,MUTED,false));
 
         int[][] rows = {{10,11,12},{7,8,9},{4,5,6},{1,2,3}};
         for (int[] row : rows) {
@@ -246,16 +249,16 @@ public class MainActivity extends Activity {
 
                 LinearLayout card = vbox();
                 card.setGravity(Gravity.CENTER);
-                card.setPadding(dp(4),dp(7),dp(4),dp(7));
+                card.setPadding(dp(3),dp(4),dp(3),dp(4));
                 card.setBackground(round(Color.WHITE,14,1,Color.rgb(221,204,182)));
-                card.addView(center("واحد " + fa(n),15,DARK,true));
-                card.addView(center(u==null?"":u.residentName(),9,MUTED,false));
+                card.addView(center("واحد " + fa(n),13,DARK,true));
+                card.addView(center(u==null?"":u.residentName(),8,MUTED,false));
                 card.addView(statusChip(chargeStatusText(cs,"شارژ"),statusColor(cs)));
                 card.addView(statusChip(chargeStatusText(ws,"آب"),statusColor(ws)));
                 card.setOnClickListener(v -> showUnitDetail(unit));
 
-                LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,dp(120),1f);
-                p.setMargins(dp(4),dp(5),dp(4),dp(5));
+                LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,dp(80),1f);
+                p.setMargins(dp(3),dp(2),dp(3),dp(2));
                 r.addView(card,p);
             }
         }
@@ -270,8 +273,8 @@ public class MainActivity extends Activity {
         else if(color==ORANGE) bg=SOFT_ORANGE;
         else bg=Color.rgb(244,241,237);
         t.setBackground(round(bg,12,0,0));
-        LinearLayout.LayoutParams p=lp(dp(92),dp(24));
-        p.setMargins(0,dp(2),0,dp(1));
+        LinearLayout.LayoutParams p=lp(dp(82),dp(18));
+        p.setMargins(0,dp(1),0,0);
         t.setLayoutParams(p);
         return t;
     }
@@ -290,15 +293,15 @@ public class MainActivity extends Activity {
         return MUTED;
     }
 
-    private void stat(LinearLayout row,String icon,String title,long value) {
+    private void stat(LinearLayout row,int iconRes,String title,long value) {
         LinearLayout c = vbox();
         c.setGravity(Gravity.CENTER);
-        c.setPadding(dp(4),dp(7),dp(4),dp(7));
+        c.setPadding(dp(3),dp(4),dp(3),dp(4));
         c.setBackground(round(CREAM2,13,1,Color.rgb(218,196,169)));
-        c.addView(center(icon,18,BROWN,true));
-        c.addView(center(title,9,MUTED,false));
-        c.addView(center(money(value),10,DARK,true));
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,dp(86),1f);
+        c.addView(iconView(iconRes,BROWN,16),lp(-1,dp(20)));
+        c.addView(center(title,8,MUTED,false));
+        c.addView(center(money(value),9,DARK,true));
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,dp(60),1f);
         p.setMargins(dp(3),0,dp(3),0);
         row.addView(c,p);
     }
@@ -313,7 +316,7 @@ public class MainActivity extends Activity {
         body.addView(tv("واحد " + fa(number),20,DARK,true));
         body.addView(tv("اطلاعات و خلاصه مالی",10,MUTED,false));
 
-        LinearLayout info = sectionCard("اطلاعات ساکن","⌂");
+        LinearLayout info = sectionCard("اطلاعات ساکن",R.drawable.ic_apartment);
         info.addView(detailLine("مالک", emptyDash(u.owner)));
         info.addView(detailLine("موبایل مالک", emptyDash(u.ownerPhone)));
         if (DataStore.OCC_TENANT.equals(u.occupancy)) {
@@ -334,7 +337,7 @@ public class MainActivity extends Activity {
         long monthDebt=store.unitMonthDebt(monthKey,number);
         long totalDebt=store.unitTotalDebtThrough(monthKey,number);
 
-        LinearLayout fin=sectionCard("وضعیت مالی","₮");
+        LinearLayout fin=sectionCard("وضعیت مالی",R.drawable.ic_wallet);
         fin.addView(detailLine("شارژ این ماه",chargeDue<=0?"ثبت نشده":money(chargeDue)));
         fin.addView(detailLine("پرداخت شارژ",money(Math.min(chargePaid,chargeDue))));
         fin.addView(detailLine("مانده شارژ",money(Math.max(0,chargeDue-chargePaid))));
@@ -350,13 +353,11 @@ public class MainActivity extends Activity {
         if (totalDebt > 0L) {
             Button sms=button("✉ پیامک یادآوری",Color.WHITE,BROWN,true);
             sms.setOnClickListener(v->sendUnitReminder(number));
-            actions.addView(sms,new LinearLayout.LayoutParams(0,dp(46),1f));
+            actions.addView(sms,pairButtonParams(1f));
         }
-        Button image=button("▣ خروجی تصویر",BROWN,CREAM2,true);
+        Button image=button("اشتراک گزارش",BROWN,CREAM2,true);
         image.setOnClickListener(v->showUnitReportImage(number));
-        LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(0,dp(46),1f);
-        ip.setMargins(dp(4),0,dp(4),0);
-        actions.addView(image,ip);
+        actions.addView(image,pairButtonParams(1f));
         body.addView(actions,rowParams());
 
         List<DataStore.ChargePayment> payments=store.paymentsForUnit(number);
@@ -438,14 +439,13 @@ public class MainActivity extends Activity {
         return r;
     }
 
-    private LinearLayout sectionCard(String title,String icon) {
+    private LinearLayout sectionCard(String title,int iconRes) {
         LinearLayout c=vbox();
         c.setPadding(dp(12),dp(10),dp(12),dp(10));
         c.setBackground(round(Color.WHITE,13,1,Color.rgb(224,207,185)));
         LinearLayout head=hbox();
         head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView it=center(icon,18,BROWN,true);
-        head.addView(it,lp(dp(34),dp(30)));
+        head.addView(iconView(iconRes,BROWN,19),lp(dp(34),dp(30)));
         head.addView(tv(title,13,DARK,true),new LinearLayout.LayoutParams(0,dp(30),1f));
         c.addView(head);
         return c;
@@ -597,23 +597,26 @@ public class MainActivity extends Activity {
         body.setPadding(dp(10),dp(12),dp(10),dp(18));
         body.addView(tv("مدیریت مالی",19,DARK,true));
         body.addView(tv("ثبت و کنترل دریافت‌ها، هزینه‌ها و صندوق",10,MUTED,false));
-        body.addView(menuButton("●","شارژ ماهانه","مبلغ، تاریخ و پرداخت چندماهه",v->showCharge()));
-        body.addView(menuButton("≋","قبض آب","مصرف، هزینه عمومی و پرداخت واحدها",v->showWater()));
-        body.addView(menuButton("−","هزینه‌های ساختمان","برق عمومی، نگهبان، نظافت، تعمیرات و ...",v->showExpenses()));
-        body.addView(menuButton("◉","صندوق بلوک","موجودی، دریافتی‌ها، هزینه‌ها و خروجی تصویر",v->showFund()));
-        body.addView(menuButton("✉","تنظیم متن پیامک","متن یادآوری بدهی مالک یا مستأجر",v->showSmsSettings()));
-        body.addView(menuButton("↕","پشتیبان‌گیری","خروجی و بازیابی اطلاعات برنامه",v->showBackup()));
+        body.addView(menuButton(R.drawable.ic_payments,"شارژ ماهانه","مبلغ، تاریخ و پرداخت چندماهه",v->showCharge()));
+        body.addView(menuButton(R.drawable.ic_water_drop,"قبض آب","مصرف، هزینه عمومی و پرداخت واحدها",v->showWater()));
+        body.addView(menuButton(R.drawable.ic_receipt,"هزینه‌های ساختمان","برق عمومی، نگهبان، نظافت، تعمیرات و ...",v->showExpenses()));
+        body.addView(menuButton(R.drawable.ic_wallet,"صندوق بلوک","موجودی، دریافتی‌ها، هزینه‌ها و اشتراک گزارش",v->showFund()));
+        body.addView(menuButton(R.drawable.ic_sms,"تنظیم متن پیامک","متن یادآوری بدهی مالک یا مستأجر",v->showSmsSettings()));
+        body.addView(menuButton(R.drawable.ic_backup,"پشتیبان‌گیری","خروجی و بازیابی اطلاعات برنامه",v->showBackup()));
         setPage("finance",scroll(body));
     }
 
-    private View menuButton(String icon,String title,String desc,View.OnClickListener listener) {
+    private View menuButton(int iconRes,String title,String desc,View.OnClickListener listener) {
         LinearLayout r=hbox();
         r.setGravity(Gravity.CENTER_VERTICAL);
         r.setPadding(dp(12),dp(10),dp(12),dp(10));
         r.setBackground(round(Color.WHITE,13,1,Color.rgb(224,207,185)));
 
-        TextView badge=center(icon,19,BROWN,true);
+        FrameLayout badge=new FrameLayout(this);
         badge.setBackground(round(CREAM2,12,0,0));
+        ImageView icon=iconView(iconRes,BROWN,21);
+        FrameLayout.LayoutParams iconLp=new FrameLayout.LayoutParams(dp(26),dp(26),Gravity.CENTER);
+        badge.addView(icon,iconLp);
         r.addView(badge,lp(dp(46),dp(46)));
 
         LinearLayout info=vbox();
@@ -647,13 +650,11 @@ public class MainActivity extends Activity {
             showCharge();
             toast("مبلغ شارژ ذخیره شد");
         });
-        buttons.addView(save,new LinearLayout.LayoutParams(0,dp(46),1.3f));
+        buttons.addView(save,pairButtonParams(1.3f));
 
-        Button image=button("▣ خروجی تصویر",BROWN,CREAM2,true);
+        Button image=button("اشتراک گزارش",BROWN,CREAM2,true);
         image.setOnClickListener(v->showChargeReportImage());
-        LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(0,dp(46),1f);
-        ip.setMargins(dp(5),0,0,0);
-        buttons.addView(image,ip);
+        buttons.addView(image,pairButtonParams(1f));
         body.addView(buttons,rowParams());
 
         body.addView(tv("وضعیت پرداخت واحدها",14,DARK,true));
@@ -782,7 +783,7 @@ public class MainActivity extends Activity {
         for(DataStore.UnitInfo u:store.getUnits()){
             if(!u.submeter) continue;
             anyMeter=true;
-            LinearLayout meterCard=sectionCard("کنتور فرعی واحد "+fa(u.number),"≋");
+            LinearLayout meterCard=sectionCard("کنتور فرعی واحد "+fa(u.number),R.drawable.ic_water_drop);
             double prev=store.previousReadingForUnit(monthKey,u.number);
             meterCard.addView(tv("عدد قبلی: "+PersianDate.toFaDigits(trim(prev)),10,MUTED,false));
             EditText c=edit("عدد جدید کنتور",trim(store.savedCurrentReading(monthKey,u.number)),
@@ -795,12 +796,10 @@ public class MainActivity extends Activity {
 
         LinearLayout actions=hbox();
         Button calc=button("محاسبه و پیش‌نمایش",Color.WHITE,BROWN,true);
-        actions.addView(calc,new LinearLayout.LayoutParams(0,dp(46),1.3f));
-        Button image=button("▣ خروجی تصویر",BROWN,CREAM2,true);
+        actions.addView(calc,pairButtonParams(1.3f));
+        Button image=button("اشتراک گزارش",BROWN,CREAM2,true);
         image.setOnClickListener(v->showWaterReportImage());
-        LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(0,dp(46),1f);
-        ip.setMargins(dp(5),0,0,0);
-        actions.addView(image,ip);
+        actions.addView(image,pairButtonParams(1f));
         body.addView(actions,rowParams());
 
         calc.setOnClickListener(v->{
@@ -938,7 +937,7 @@ public class MainActivity extends Activity {
         });
         body.addView(add,buttonParams());
 
-        LinearLayout sum=sectionCard("جمع هزینه ماه","−");
+        LinearLayout sum=sectionCard("جمع هزینه ماه",R.drawable.ic_payments);
         sum.addView(detailLine("مبلغ",money(store.monthExpenses(monthKey))));
         body.addView(sum,rowParams());
 
@@ -986,13 +985,11 @@ public class MainActivity extends Activity {
             store.setInitialFund(x);
             showFund();
         });
-        actions.addView(save,new LinearLayout.LayoutParams(0,dp(46),1.3f));
+        actions.addView(save,pairButtonParams(1.3f));
 
-        Button image=button("▣ خروجی تصویر",BROWN,CREAM2,true);
+        Button image=button("اشتراک گزارش",BROWN,CREAM2,true);
         image.setOnClickListener(v->showFundReportImage());
-        LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(0,dp(46),1f);
-        ip.setMargins(dp(5),0,0,0);
-        actions.addView(image,ip);
+        actions.addView(image,pairButtonParams(1f));
         body.addView(actions,rowParams());
 
         body.addView(tv("ریز هزینه‌های "+PersianDate.monthLabel(monthKey),14,DARK,true));
@@ -1102,7 +1099,7 @@ public class MainActivity extends Activity {
         body.addView(tv("گزارش مالی",19,DARK,true));
         body.addView(tv(PersianDate.monthLabel(monthKey),11,BROWN,true));
 
-        LinearLayout summary=sectionCard("خلاصه ماه","▥");
+        LinearLayout summary=sectionCard("خلاصه ماه",R.drawable.ic_bar_chart);
         summary.addView(detailLine("شارژ تعیین‌شده",money(store.monthChargeDue(monthKey))));
         summary.addView(detailLine("شارژ وصول‌شده",money(store.monthChargePaid(monthKey))));
         summary.addView(detailLine("آب تعیین‌شده",money(store.monthWaterDue(monthKey))));
@@ -1112,7 +1109,7 @@ public class MainActivity extends Activity {
         summary.addView(detailLine("موجودی صندوق",money(store.fundBalance())));
         body.addView(summary,rowParams());
 
-        Button image=button("▣ خروجی تصویری گزارش ماه",Color.WHITE,BROWN,true);
+        Button image=button("اشتراک گزارشی گزارش ماه",Color.WHITE,BROWN,true);
         image.setOnClickListener(v->showMonthlyReportImage());
         body.addView(image,buttonParams());
 
@@ -1271,13 +1268,7 @@ public class MainActivity extends Activity {
     private void showReportActions(String title,String subtitle,List<ReportImageUtil.Row> rows,String filename) {
         try {
             Bitmap bitmap=ReportImageUtil.create(this,title,subtitle,rows);
-            new AlertDialog.Builder(this)
-                    .setTitle("خروجی تصویری آماده است")
-                    .setMessage("می‌توانید تصویر را در گالری ذخیره کنید یا مستقیم در گروه ساختمان به اشتراک بگذارید.")
-                    .setNegativeButton("بستن",null)
-                    .setNeutralButton("ذخیره تصویر",(d,w)->saveReport(bitmap,filename))
-                    .setPositiveButton("اشتراک‌گذاری",(d,w)->shareReport(bitmap,filename))
-                    .show();
+            shareReport(bitmap,filename);
         } catch(Exception e) {
             alert("خطا در ساخت تصویر",e.getMessage()==null?"تصویر ساخته نشد":e.getMessage());
         }
@@ -1309,6 +1300,21 @@ public class MainActivity extends Activity {
         TextView t=tv(title,19,DARK,true);
         t.setPadding(0,0,0,dp(4));
         return t;
+    }
+
+    private ImageView iconView(int resId,int tint,int sizeDp) {
+        ImageView image=new ImageView(this);
+        image.setImageResource(resId);
+        image.setColorFilter(tint);
+        image.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        image.setPadding(dp(2),dp(2),dp(2),dp(2));
+        return image;
+    }
+
+    private LinearLayout.LayoutParams pairButtonParams(float weight) {
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(46),weight);
+        p.setMargins(dp(4),0,dp(4),0);
+        return p;
     }
 
     private TextView tv(String value,float size,int color,boolean isBold) {
