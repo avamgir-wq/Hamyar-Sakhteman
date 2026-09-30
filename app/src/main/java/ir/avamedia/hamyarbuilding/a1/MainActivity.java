@@ -1287,15 +1287,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void saveReport(Bitmap bitmap,String filename) {
-        try {
-            ReportImageUtil.saveToGallery(this,bitmap,filename);
-            toast("تصویر گزارش ذخیره شد");
-        } catch(Exception e) {
-            alert("خطا",e.getMessage()==null?"ذخیره تصویر انجام نشد":e.getMessage());
-        }
-    }
-
     private TextView pageTitle(String title) {
         TextView t=tv(title,19,DARK,true);
         t.setPadding(0,0,0,dp(4));
