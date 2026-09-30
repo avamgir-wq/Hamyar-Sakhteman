@@ -74,7 +74,7 @@ public final class DataStore {
         public boolean waterSplitByOccupants = false;
 
         public final Map<Integer, Boolean> legacyChargePaid = new HashMap<>();
-        public final Map<Integer, Boolean> waterPaid = new HashMap<>();
+        public final Map<Integer, Boolean> legacyWaterPaid = new HashMap<>();
         public final Map<Integer, Long> waterShare = new HashMap<>();
         public final Map<Integer, Long> waterConsumptionShare = new HashMap<>();
         public final Map<Integer, Long> waterGeneralShare = new HashMap<>();
@@ -97,6 +97,7 @@ public final class DataStore {
         public String startMonth = "";
         public long amount;
         public long credit;
+        public boolean externalFunding = false;
         public final Map<String, Long> allocations = new LinkedHashMap<>();
     }
 
@@ -104,6 +105,25 @@ public final class DataStore {
         public long amount;
         public long credit;
         public final Map<String, Long> allocations = new LinkedHashMap<>();
+    }
+
+    public static final class WaterPayment {
+        public long id;
+        public int unit;
+        public String monthKey = "";
+        public String date = "";
+        public long amount;
+        public long appliedWater;
+        public long transferredToCharge;
+        public long linkedChargePaymentId;
+    }
+
+    public static final class WaterPaymentPreview {
+        public long amount;
+        public long appliedWater;
+        public long transferredToCharge;
+        public long waterRemainingAfter;
+        public ChargePreview chargePreview;
     }
 
     public static final class WaterCalculation {
@@ -124,6 +144,7 @@ public final class DataStore {
     private final Map<String, MonthData> months = new HashMap<>();
     private final List<Expense> expenses = new ArrayList<>();
     private final List<ChargePayment> chargePayments = new ArrayList<>();
+    private final List<WaterPayment> waterPayments = new ArrayList<>();
 
     private long initialFund = 0L;
     private String smsTemplate = "مالک/ساکن محترم {نام}، بدهی واحد {واحد} بابت شارژ و آب تا {ماه} مبلغ {مبلغ} تومان است. با تشکر - مدیریت بلوک A1 مجتمع فرهیختگان";
@@ -153,6 +174,7 @@ public final class DataStore {
         months.clear();
         expenses.clear();
         chargePayments.clear();
+        waterPayments.clear();
 
         initialFund = root.optLong("initialFund", 0L);
         smsTemplate = root.optString("smsTemplate", smsTemplate);
@@ -201,15 +223,13 @@ public final class DataStore {
 
                     readBoolMap(mo.optJSONObject("chargePaid"), md.legacyChargePaid);
                     readBoolMap(mo.optJSONObject("legacyChargePaid"), md.legacyChargePaid);
-                    readBoolMap(mo.optJSONObject("waterPaid"), md.waterPaid);
+                    readBoolMap(mo.optJSONObject("waterPaid"), md.legacyWaterPaid);
+                    readBoolMap(mo.optJSONObject("legacyWaterPaid"), md.legacyWaterPaid);
                     readLongMap(mo.optJSONObject("waterShare"), md.waterShare);
                     readLongMap(mo.optJSONObject("waterConsumptionShare"), md.waterConsumptionShare);
                     readLongMap(mo.optJSONObject("waterGeneralShare"), md.waterGeneralShare);
                     readDoubleMap(mo.optJSONObject("waterConsumption"), md.waterConsumption);
                     readDoubleMap(mo.optJSONObject("waterCurrent"), md.waterCurrent);
-                    if (md.waterCurrent.isEmpty()) {
-                        readDoubleMap(mo.optJSONObject("waterCurrent"), md.waterCurrent);
-                    }
                     months.put(key, md);
                 }
             }
@@ -242,6 +262,7 @@ public final class DataStore {
                 p.startMonth = o.optString("startMonth", "");
                 p.amount = Math.max(0L, o.optLong("amount", 0L));
                 p.credit = Math.max(0L, o.optLong("credit", 0L));
+                p.externalFunding = o.optBoolean("externalFunding", false);
                 JSONObject alloc = o.optJSONObject("allocations");
                 if (alloc != null) {
                     JSONArray an = alloc.names();
@@ -254,6 +275,24 @@ public final class DataStore {
             }
         }
 
+        JSONArray wp = root.optJSONArray("waterPayments");
+        if (wp != null) {
+            for (int i = 0; i < wp.length(); i++) {
+                JSONObject o = wp.optJSONObject(i);
+                if (o == null) continue;
+                WaterPayment p = new WaterPayment();
+                p.id = o.optLong("id", System.currentTimeMillis() + i);
+                p.unit = o.optInt("unit", 0);
+                p.monthKey = o.optString("monthKey", "");
+                p.date = o.optString("date", "");
+                p.amount = Math.max(0L, o.optLong("amount", 0L));
+                p.appliedWater = Math.max(0L, o.optLong("appliedWater", 0L));
+                p.transferredToCharge = Math.max(0L, o.optLong("transferredToCharge", 0L));
+                p.linkedChargePaymentId = o.optLong("linkedChargePaymentId", 0L);
+                if (p.unit >= 1 && p.unit <= 12 && p.amount > 0L) waterPayments.add(p);
+            }
+        }
+
         normalizeUnits();
     }
 
@@ -262,6 +301,7 @@ public final class DataStore {
         months.clear();
         expenses.clear();
         chargePayments.clear();
+        waterPayments.clear();
         initialFund = 0L;
         for (int n = 1; n <= 12; n++) {
             UnitInfo u = new UnitInfo();
@@ -305,7 +345,7 @@ public final class DataStore {
 
     private JSONObject buildRoot() throws JSONException {
         JSONObject root = new JSONObject();
-        root.put("schema", 3);
+        root.put("schema", 4);
         root.put("initialFund", initialFund);
         root.put("smsTemplate", smsTemplate);
 
@@ -337,7 +377,7 @@ public final class DataStore {
             o.put("mainWaterConsumption", md.mainWaterConsumption);
             o.put("waterSplitByOccupants", md.waterSplitByOccupants);
             o.put("legacyChargePaid", boolMapJson(md.legacyChargePaid));
-            o.put("waterPaid", boolMapJson(md.waterPaid));
+            o.put("legacyWaterPaid", boolMapJson(md.legacyWaterPaid));
             o.put("waterShare", longMapJson(md.waterShare));
             o.put("waterConsumptionShare", longMapJson(md.waterConsumptionShare));
             o.put("waterGeneralShare", longMapJson(md.waterGeneralShare));
@@ -368,12 +408,29 @@ public final class DataStore {
             o.put("startMonth", p.startMonth);
             o.put("amount", p.amount);
             o.put("credit", p.credit);
+            o.put("externalFunding", p.externalFunding);
             JSONObject a = new JSONObject();
             for (Map.Entry<String, Long> x : p.allocations.entrySet()) a.put(x.getKey(), x.getValue());
             o.put("allocations", a);
             pa.put(o);
         }
         root.put("chargePayments", pa);
+
+        JSONArray wa = new JSONArray();
+        for (WaterPayment p : waterPayments) {
+            JSONObject o = new JSONObject();
+            o.put("id", p.id);
+            o.put("unit", p.unit);
+            o.put("monthKey", p.monthKey);
+            o.put("date", p.date);
+            o.put("amount", p.amount);
+            o.put("appliedWater", p.appliedWater);
+            o.put("transferredToCharge", p.transferredToCharge);
+            o.put("linkedChargePaymentId", p.linkedChargePaymentId);
+            wa.put(o);
+        }
+        root.put("waterPayments", wa);
+
         return root;
     }
 
@@ -478,6 +535,12 @@ public final class DataStore {
         return Math.max(0L, sum);
     }
 
+    public long chargeCredit(int unit) {
+        long sum = 0L;
+        for (ChargePayment p : chargePayments) if (p.unit == unit) sum += p.credit;
+        return Math.max(0L, sum);
+    }
+
     public int chargeStatus(String monthKey, int unit) {
         long due = chargeDue(monthKey, unit);
         if (due <= 0L) return 0;
@@ -496,18 +559,35 @@ public final class DataStore {
     }
 
     public ChargePayment recordChargePayment(int unit, String date, String startMonth, long amount) {
+        ChargePayment p = createChargePayment(unit, date, startMonth, amount, false, true);
+        save();
+        return p;
+    }
+
+    private ChargePayment createChargePayment(int unit, String date, String startMonth, long amount,
+                                              boolean externalFunding, boolean createFutureCharges) {
         if (unit < 1 || unit > 12 || amount <= 0L) throw new IllegalArgumentException("مبلغ پرداخت صحیح نیست.");
-        ChargePreview preview = allocateCharge(unit, startMonth, amount, true);
+
+        ChargePreview preview;
+        try {
+            preview = allocateCharge(unit, startMonth, amount, createFutureCharges);
+        } catch (IllegalArgumentException ex) {
+            if (!externalFunding) throw ex;
+            preview = new ChargePreview();
+            preview.amount = amount;
+            preview.credit = amount;
+        }
+
         ChargePayment p = new ChargePayment();
-        p.id = System.currentTimeMillis();
+        p.id = System.currentTimeMillis() + chargePayments.size();
         p.unit = unit;
         p.date = date == null ? "" : date.trim();
         p.startMonth = startMonth;
         p.amount = amount;
         p.credit = preview.credit;
+        p.externalFunding = externalFunding;
         p.allocations.putAll(preview.allocations);
         chargePayments.add(p);
-        save();
         return p;
     }
 
@@ -712,12 +792,102 @@ public final class DataStore {
         return value(getMonth(monthKey).waterGeneralShare, unit);
     }
 
-    public boolean isWaterPaid(String monthKey, int unit) {
-        return Boolean.TRUE.equals(getMonth(monthKey).waterPaid.get(unit));
+    public long waterPaidAmount(String monthKey, int unit) {
+        MonthData md = getMonth(monthKey);
+        long sum = 0L;
+        if (Boolean.TRUE.equals(md.legacyWaterPaid.get(unit))) sum += waterShare(monthKey, unit);
+        for (WaterPayment p : waterPayments) {
+            if (p.unit == unit && monthKey.equals(p.monthKey)) sum += p.appliedWater;
+        }
+        return Math.max(0L, sum);
     }
 
-    public void setWaterPaid(String monthKey, int unit, boolean paid) {
-        getMonth(monthKey).waterPaid.put(unit, paid);
+    public long waterRemaining(String monthKey, int unit) {
+        return Math.max(0L, waterShare(monthKey, unit) - waterPaidAmount(monthKey, unit));
+    }
+
+    public int waterStatus(String monthKey, int unit) {
+        long due = waterShare(monthKey, unit);
+        if (due <= 0L) return 0;
+        long paid = waterPaidAmount(monthKey, unit);
+        if (paid <= 0L) return 1;
+        if (paid < due) return 2;
+        return 3;
+    }
+
+    public WaterPaymentPreview previewWaterPayment(int unit, String monthKey, long amount) {
+        if (amount <= 0L) throw new IllegalArgumentException("مبلغ پرداخت صحیح نیست.");
+        long remain = waterRemaining(monthKey, unit);
+        if (remain <= 0L) throw new IllegalArgumentException("قبض آب این واحد تسویه شده است.");
+
+        WaterPaymentPreview p = new WaterPaymentPreview();
+        p.amount = amount;
+        p.appliedWater = Math.min(amount, remain);
+        p.transferredToCharge = Math.max(0L, amount - p.appliedWater);
+        p.waterRemainingAfter = Math.max(0L, remain - p.appliedWater);
+        if (p.transferredToCharge > 0L) {
+            try {
+                p.chargePreview = previewChargePayment(unit, monthKey, p.transferredToCharge);
+            } catch (Exception ignored) {
+                p.chargePreview = null;
+            }
+        }
+        return p;
+    }
+
+    public WaterPayment recordWaterPayment(int unit, String monthKey, String date, long amount) {
+        WaterPaymentPreview preview = previewWaterPayment(unit, monthKey, amount);
+
+        WaterPayment p = new WaterPayment();
+        p.id = System.currentTimeMillis() + waterPayments.size();
+        p.unit = unit;
+        p.monthKey = monthKey;
+        p.date = date == null ? "" : date.trim();
+        p.amount = amount;
+        p.appliedWater = preview.appliedWater;
+        p.transferredToCharge = preview.transferredToCharge;
+
+        if (p.transferredToCharge > 0L) {
+            ChargePayment cp = createChargePayment(unit, p.date, monthKey, p.transferredToCharge, true, true);
+            p.linkedChargePaymentId = cp.id;
+        }
+
+        waterPayments.add(p);
+        save();
+        return p;
+    }
+
+    public List<WaterPayment> waterPaymentsForUnit(int unit) {
+        List<WaterPayment> out = new ArrayList<>();
+        for (WaterPayment p : waterPayments) if (p.unit == unit) out.add(p);
+        Collections.sort(out, new Comparator<WaterPayment>() {
+            @Override public int compare(WaterPayment a, WaterPayment b) { return Long.compare(b.id, a.id); }
+        });
+        return out;
+    }
+
+    public List<WaterPayment> waterPaymentsForMonth(String monthKey) {
+        List<WaterPayment> out = new ArrayList<>();
+        for (WaterPayment p : waterPayments) if (monthKey.equals(p.monthKey)) out.add(p);
+        Collections.sort(out, new Comparator<WaterPayment>() {
+            @Override public int compare(WaterPayment a, WaterPayment b) { return Long.compare(b.id, a.id); }
+        });
+        return out;
+    }
+
+    public void deleteWaterPayment(long id) {
+        long linked = 0L;
+        for (int i = waterPayments.size() - 1; i >= 0; i--) {
+            if (waterPayments.get(i).id == id) {
+                linked = waterPayments.get(i).linkedChargePaymentId;
+                waterPayments.remove(i);
+            }
+        }
+        if (linked != 0L) {
+            for (int i = chargePayments.size() - 1; i >= 0; i--) {
+                if (chargePayments.get(i).id == linked) chargePayments.remove(i);
+            }
+        }
         save();
     }
 
@@ -776,7 +946,7 @@ public final class DataStore {
 
     public long monthWaterPaid(String monthKey) {
         long sum = 0L;
-        for (int i = 1; i <= 12; i++) if (isWaterPaid(monthKey, i)) sum += waterShare(monthKey, i);
+        for (int i = 1; i <= 12; i++) sum += Math.min(waterShare(monthKey, i), waterPaidAmount(monthKey, i));
         return sum;
     }
 
@@ -787,10 +957,7 @@ public final class DataStore {
     }
 
     public long unitMonthDebt(String monthKey, int unit) {
-        long d = chargeRemaining(monthKey, unit);
-        long w = waterShare(monthKey, unit);
-        if (w > 0L && !isWaterPaid(monthKey, unit)) d += w;
-        return d;
+        return chargeRemaining(monthKey, unit) + waterRemaining(monthKey, unit);
     }
 
     public long unitTotalDebtThrough(String throughMonth, int unit) {
@@ -808,23 +975,29 @@ public final class DataStore {
         return sum;
     }
 
-    public long totalChargePaymentIncome() {
+    public long totalChargeCashIncome() {
         long sum = 0L;
-        for (ChargePayment p : chargePayments) sum += p.amount;
+        for (ChargePayment p : chargePayments) if (!p.externalFunding) sum += p.amount;
         for (MonthData md : months.values()) {
             for (int unit = 1; unit <= 12; unit++) if (Boolean.TRUE.equals(md.legacyChargePaid.get(unit))) sum += md.chargeAmount;
         }
         return sum;
     }
 
-    public long totalWaterIncome() {
+    public long totalWaterCashIncome() {
         long sum = 0L;
-        for (Map.Entry<String, MonthData> e : months.entrySet()) sum += monthWaterPaid(e.getKey());
+        for (WaterPayment p : waterPayments) sum += p.amount;
+        for (Map.Entry<String, MonthData> e : months.entrySet()) {
+            MonthData md = e.getValue();
+            for (int unit = 1; unit <= 12; unit++) {
+                if (Boolean.TRUE.equals(md.legacyWaterPaid.get(unit))) sum += waterShare(e.getKey(), unit);
+            }
+        }
         return sum;
     }
 
     public long totalIncome() {
-        return totalChargePaymentIncome() + totalWaterIncome();
+        return totalChargeCashIncome() + totalWaterCashIncome();
     }
 
     public long getInitialFund() { return initialFund; }
