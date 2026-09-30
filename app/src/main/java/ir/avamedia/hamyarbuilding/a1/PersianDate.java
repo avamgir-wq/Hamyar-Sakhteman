@@ -53,11 +53,34 @@ public final class PersianDate {
         return key;
     }
 
+    public static int monthSerial(String key) {
+        try {
+            String[] p = key.split("/");
+            int y = Integer.parseInt(p[0]);
+            int m = Integer.parseInt(p[1]);
+            return y * 12 + (m - 1);
+        } catch (Exception ignored) {
+            Jalali j = today();
+            return j.year * 12 + (j.month - 1);
+        }
+    }
+
+    public static String shiftMonth(String key, int delta) {
+        int s = monthSerial(key) + delta;
+        int y = floorDiv(s, 12);
+        int m = floorMod(s, 12) + 1;
+        return monthKey(y, m);
+    }
+
+    public static boolean isBefore(String a, String b) {
+        return monthSerial(a) < monthSerial(b);
+    }
+
     public static List<String> nearbyMonthKeys() {
         Jalali now = today();
         List<String> list = new ArrayList<>();
         int serial = now.year * 12 + (now.month - 1);
-        for (int d = -18; d <= 18; d++) {
+        for (int d = -24; d <= 36; d++) {
             int s = serial + d;
             int y = floorDiv(s, 12);
             int m = floorMod(s, 12) + 1;
