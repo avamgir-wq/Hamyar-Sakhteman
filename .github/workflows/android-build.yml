@@ -58,13 +58,71 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Prepare launcher icon and Shabnam fonts
+      - name: Prepare transparent launcher icon and Shabnam fonts
         run: |
           mkdir -p app/src/main/res/mipmap-xxxhdpi
           mkdir -p app/src/main/assets/fonts
-          base64 -d app_icon.b64 > app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp
-          file app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp
-          test -s app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp
+          base64 -d app_icon.b64 > /tmp/app_icon_source.webp
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          from PIL import Image
+          from collections import deque
+          import math
+
+          src = Image.open("/tmp/app_icon_source.webp").convert("RGBA")
+          w, h = src.size
+          px = src.load()
+
+          corners = [px[0,0], px[w-1,0], px[0,h-1], px[w-1,h-1]]
+          ref = tuple(sum(c[i] for c in corners)//4 for i in range(3))
+
+          def near_bg(x, y):
+              r,g,b,a = px[x,y]
+              if a == 0:
+                  return True
+              dist = math.sqrt((r-ref[0])**2 + (g-ref[1])**2 + (b-ref[2])**2)
+              return dist < 72 and max(r,g,b) > 205
+
+          q = deque()
+          seen = set()
+          for x in range(w):
+              for y in (0, h-1):
+                  if near_bg(x,y):
+                      q.append((x,y)); seen.add((x,y))
+          for y in range(h):
+              for x in (0, w-1):
+                  if near_bg(x,y) and (x,y) not in seen:
+                      q.append((x,y)); seen.add((x,y))
+
+          while q:
+              x,y=q.popleft()
+              r,g,b,a=px[x,y]
+              px[x,y]=(r,g,b,0)
+              for nx,ny in ((x-1,y),(x+1,y),(x,y-1),(x,y+1)):
+                  if 0 <= nx < w and 0 <= ny < h and (nx,ny) not in seen and near_bg(nx,ny):
+                      seen.add((nx,ny)); q.append((nx,ny))
+
+          alpha = src.getchannel("A")
+          box = alpha.getbbox()
+          if box:
+              src = src.crop(box)
+
+          target = Image.new("RGBA",(512,512),(0,0,0,0))
+          src.thumbnail((512,512),Image.Resampling.LANCZOS)
+          x=(512-src.width)//2
+          y=(512-src.height)//2
+          target.alpha_composite(src,(x,y))
+          target.save("app/src/main/res/mipmap-xxxhdpi/ic_launcher.png","PNG",optimize=True)
+
+          out = Image.open("app/src/main/res/mipmap-xxxhdpi/ic_launcher.png").convert("RGBA")
+          transparent = sum(1 for a in out.getchannel("A").getdata() if a == 0)
+          total = out.width*out.height
+          print("launcher:", out.size, "transparent pixels:", transparent, "/", total)
+          if transparent < total * 0.01:
+              raise SystemExit("Launcher transparency check failed")
+          PY
+          file app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          test -s app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           curl -L --fail --retry 3 -o app/src/main/assets/fonts/shabnam.ttf \
             https://raw.githubusercontent.com/rastikerdar/shabnam-font/master/dist/Shabnam.ttf
           curl -L --fail --retry 3 -o app/src/main/assets/fonts/shabnam_bold.ttf \
@@ -74,11 +132,11 @@ jobs:
         run: gradle --no-daemon clean assembleDebug
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk Hamyar-Sakhteman-A1-Alpha3.2.1.1.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk Hamyar-Sakhteman-A1-Alpha3.2.2.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Hamyar-Sakhteman-A1-Alpha3.2.1
-          path: Hamyar-Sakhteman-A1-Alpha3.2.1.1.apk
+          name: Hamyar-Sakhteman-A1-Alpha3.2.2
+          path: Hamyar-Sakhteman-A1-Alpha3.2.2.apk
           if-no-files-found: error
