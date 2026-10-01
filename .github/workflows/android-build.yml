@@ -58,11 +58,13 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Prepare app icon and Shabnam fonts
+      - name: Prepare launcher icon and Shabnam fonts
         run: |
-          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/mipmap-xxxhdpi
           mkdir -p app/src/main/assets/fonts
-          base64 -d app_icon.b64 > app/src/main/res/drawable/app_icon.png
+          base64 -d app_icon.b64 > app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp
+          file app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp
+          test -s app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp
           curl -L --fail --retry 3 -o app/src/main/assets/fonts/shabnam.ttf \
             https://raw.githubusercontent.com/rastikerdar/shabnam-font/master/dist/Shabnam.ttf
           curl -L --fail --retry 3 -o app/src/main/assets/fonts/shabnam_bold.ttf \
@@ -72,11 +74,11 @@ jobs:
         run: gradle --no-daemon clean assembleDebug
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk Hamyar-Sakhteman-A1-Alpha3.2.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk Hamyar-Sakhteman-A1-Alpha3.2.1.1.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Hamyar-Sakhteman-A1-Alpha3.2
-          path: Hamyar-Sakhteman-A1-Alpha3.2.apk
+          name: Hamyar-Sakhteman-A1-Alpha3.2.1
+          path: Hamyar-Sakhteman-A1-Alpha3.2.1.1.apk
           if-no-files-found: error
