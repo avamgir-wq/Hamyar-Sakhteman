@@ -225,7 +225,7 @@ public class MainActivity extends Activity {
 
     private void showDashboard() {
         LinearLayout body = vbox();
-        body.setPadding(dp(8),dp(6),dp(8),dp(8));
+        body.setPadding(dp(8),dp(6),dp(8),dp(6));
 
         LinearLayout stats = hbox();
         body.addView(stats,lp(-1,-2));
@@ -234,13 +234,20 @@ public class MainActivity extends Activity {
         stat(stats,R.drawable.ic_expense,"هزینه ماه",store.monthExpenses(monthKey));
 
         TextView h = tv("وضعیت واحدها",18,DARK,true);
-        h.setPadding(dp(4),dp(7),dp(4),dp(2));
-        body.addView(h);
+        h.setPadding(dp(4),dp(7),dp(4),dp(3));
+        body.addView(h,lp(-1,-2));
+
+        LinearLayout grid = vbox();
+        LinearLayout.LayoutParams gridParams = new LinearLayout.LayoutParams(-1,0,1f);
+        body.addView(grid,gridParams);
 
         int[][] rows = {{10,11,12},{7,8,9},{4,5,6},{1,2,3}};
         for (int[] row : rows) {
             LinearLayout r = hbox();
-            body.addView(r,lp(-1,-2));
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1,0,1f);
+            rowParams.setMargins(0,dp(2),0,dp(2));
+            grid.addView(r,rowParams);
+
             for (int n : row) {
                 final int unit = n;
                 DataStore.UnitInfo u = store.getUnit(n);
@@ -249,20 +256,21 @@ public class MainActivity extends Activity {
 
                 LinearLayout card = vbox();
                 card.setGravity(Gravity.CENTER);
-                card.setPadding(dp(3),dp(4),dp(3),dp(4));
+                card.setPadding(dp(4),dp(5),dp(4),dp(5));
                 card.setBackground(round(Color.WHITE,14,1,Color.rgb(221,204,182)));
-                card.addView(center("واحد " + fa(n),13,DARK,true));
+                card.addView(center("واحد " + fa(n),14,DARK,true));
                 card.addView(center(u==null?"":u.residentName(),8,MUTED,false));
                 card.addView(statusChip(chargeStatusText(cs,"شارژ"),statusColor(cs)));
                 card.addView(statusChip(chargeStatusText(ws,"آب"),statusColor(ws)));
                 card.setOnClickListener(v -> showUnitDetail(unit));
 
-                LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,dp(80),1f);
-                p.setMargins(dp(3),dp(2),dp(3),dp(2));
+                LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0,-1,1f);
+                p.setMargins(dp(3),0,dp(3),0);
                 r.addView(card,p);
             }
         }
-        setPage("dashboard",scroll(body));
+
+        setPage("dashboard",body);
     }
 
     private TextView statusChip(String value,int color) {
