@@ -10,8 +10,8 @@ android {
         applicationId 'ir.avamedia.hamyarbuilding.a1'
         minSdk 21
         targetSdk 35
-        versionCode 8
-        versionName 'Alpha 3.2.2'
+        versionCode 9
+        versionName 'Alpha 3.2.3'
     }
 
     signingConfigs {
