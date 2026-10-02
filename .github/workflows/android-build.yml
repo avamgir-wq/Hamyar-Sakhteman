@@ -117,18 +117,14 @@ jobs:
           legacy.alpha_composite(src_legacy,(lx,ly))
           legacy.save("app/src/main/res/mipmap-xxxhdpi/ic_launcher.png","PNG",optimize=True)
 
-          # Adaptive foreground: slightly enlarged so Android/Samsung does not make it look tiny.
+          # Adaptive foreground: keep the whole artwork visible inside One UI masks.
+          # 420px is a compromise: much larger than the old tiny icon, but not cropped.
           fg = Image.new("RGBA",(512,512),(0,0,0,0))
-          ratio = min(570/src.width, 570/src.height)
-          nw=max(1,round(src.width*ratio)); nh=max(1,round(src.height*ratio))
-          enlarged=src.resize((nw,nh),Image.Resampling.LANCZOS)
-          ex=(nw-512)//2; ey=(nh-512)//2
-          if nw >= 512 and nh >= 512:
-              enlarged=enlarged.crop((ex,ey,ex+512,ey+512))
-              fg.alpha_composite(enlarged,(0,0))
-          else:
-              fx=(512-enlarged.width)//2; fy=(512-enlarged.height)//2
-              fg.alpha_composite(enlarged,(fx,fy))
+          src_fg = src.copy()
+          src_fg.thumbnail((420,420),Image.Resampling.LANCZOS)
+          fx=(512-src_fg.width)//2
+          fy=(512-src_fg.height)//2
+          fg.alpha_composite(src_fg,(fx,fy))
           fg.save("app/src/main/res/drawable-xxxhdpi/ic_launcher_foreground.png","PNG",optimize=True)
 
           out = Image.open("app/src/main/res/mipmap-xxxhdpi/ic_launcher.png").convert("RGBA")
@@ -151,11 +147,11 @@ jobs:
         run: gradle --no-daemon clean assembleDebug
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk Hamyar-Sakhteman-A1-Alpha3.2.3.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk Hamyar-Sakhteman-A1-Alpha3.2.4.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Hamyar-Sakhteman-A1-Alpha3.2.3
-          path: Hamyar-Sakhteman-A1-Alpha3.2.3.apk
+          name: Hamyar-Sakhteman-A1-Alpha3.2.4
+          path: Hamyar-Sakhteman-A1-Alpha3.2.4.apk
           if-no-files-found: error
