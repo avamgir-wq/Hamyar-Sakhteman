@@ -61,6 +61,7 @@ jobs:
       - name: Prepare transparent launcher icon and Shabnam fonts
         run: |
           mkdir -p app/src/main/res/mipmap-xxxhdpi
+          mkdir -p app/src/main/res/drawable-xxxhdpi
           mkdir -p app/src/main/assets/fonts
           base64 -d app_icon.b64 > /tmp/app_icon_source.webp
           python3 -m pip install --quiet pillow
@@ -107,12 +108,28 @@ jobs:
           if box:
               src = src.crop(box)
 
-          target = Image.new("RGBA",(512,512),(0,0,0,0))
-          src.thumbnail((512,512),Image.Resampling.LANCZOS)
-          x=(512-src.width)//2
-          y=(512-src.height)//2
-          target.alpha_composite(src,(x,y))
-          target.save("app/src/main/res/mipmap-xxxhdpi/ic_launcher.png","PNG",optimize=True)
+          # Legacy icon: artwork fills the canvas with only a very small transparent margin.
+          legacy = Image.new("RGBA",(512,512),(0,0,0,0))
+          src_legacy = src.copy()
+          src_legacy.thumbnail((500,500),Image.Resampling.LANCZOS)
+          lx=(512-src_legacy.width)//2
+          ly=(512-src_legacy.height)//2
+          legacy.alpha_composite(src_legacy,(lx,ly))
+          legacy.save("app/src/main/res/mipmap-xxxhdpi/ic_launcher.png","PNG",optimize=True)
+
+          # Adaptive foreground: slightly enlarged so Android/Samsung does not make it look tiny.
+          fg = Image.new("RGBA",(512,512),(0,0,0,0))
+          ratio = min(570/src.width, 570/src.height)
+          nw=max(1,round(src.width*ratio)); nh=max(1,round(src.height*ratio))
+          enlarged=src.resize((nw,nh),Image.Resampling.LANCZOS)
+          ex=(nw-512)//2; ey=(nh-512)//2
+          if nw >= 512 and nh >= 512:
+              enlarged=enlarged.crop((ex,ey,ex+512,ey+512))
+              fg.alpha_composite(enlarged,(0,0))
+          else:
+              fx=(512-enlarged.width)//2; fy=(512-enlarged.height)//2
+              fg.alpha_composite(enlarged,(fx,fy))
+          fg.save("app/src/main/res/drawable-xxxhdpi/ic_launcher_foreground.png","PNG",optimize=True)
 
           out = Image.open("app/src/main/res/mipmap-xxxhdpi/ic_launcher.png").convert("RGBA")
           transparent = sum(1 for a in out.getchannel("A").getdata() if a == 0)
@@ -122,7 +139,9 @@ jobs:
               raise SystemExit("Launcher transparency check failed")
           PY
           file app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          file app/src/main/res/drawable-xxxhdpi/ic_launcher_foreground.png
           test -s app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          test -s app/src/main/res/drawable-xxxhdpi/ic_launcher_foreground.png
           curl -L --fail --retry 3 -o app/src/main/assets/fonts/shabnam.ttf \
             https://raw.githubusercontent.com/rastikerdar/shabnam-font/master/dist/Shabnam.ttf
           curl -L --fail --retry 3 -o app/src/main/assets/fonts/shabnam_bold.ttf \
@@ -132,11 +151,11 @@ jobs:
         run: gradle --no-daemon clean assembleDebug
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk Hamyar-Sakhteman-A1-Alpha3.2.2.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk Hamyar-Sakhteman-A1-Alpha3.2.3.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Hamyar-Sakhteman-A1-Alpha3.2.2
-          path: Hamyar-Sakhteman-A1-Alpha3.2.2.apk
+          name: Hamyar-Sakhteman-A1-Alpha3.2.3
+          path: Hamyar-Sakhteman-A1-Alpha3.2.3.apk
           if-no-files-found: error
