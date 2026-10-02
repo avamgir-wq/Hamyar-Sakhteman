@@ -1386,9 +1386,24 @@ public class MainActivity extends Activity {
         b.setAllCaps(false);
         b.setTypeface(isBold?bold:font);
         b.setGravity(Gravity.CENTER);
-        b.setPadding(dp(6),0,dp(6),0);
-        if(bg==Color.TRANSPARENT) b.setBackgroundColor(Color.TRANSPARENT);
-        else b.setBackground(round(bg,11,0,0));
+        b.setPadding(dp(8),0,dp(8),0);
+
+        // Use a real flat shape instead of Android's default elevated button look.
+        b.setStateListAnimator(null);
+        b.setElevation(0f);
+        b.setTranslationZ(0f);
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+
+        if(bg==Color.TRANSPARENT) {
+            b.setBackgroundColor(Color.TRANSPARENT);
+        } else if(bg==CREAM2) {
+            b.setBackground(round(CREAM2,12,1,Color.rgb(222,199,168)));
+        } else {
+            b.setBackground(round(bg,12,0,0));
+        }
         return b;
     }
 
