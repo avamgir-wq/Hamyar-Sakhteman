@@ -336,6 +336,8 @@ public class MainActivity extends Activity {
             info.addView(detailLine("وضعیت سکونت","مالک ساکن است"));
         }
         info.addView(detailLine("تعداد نفرات",fa(u.occupants)));
+        info.addView(detailLine("شماره پارکینگ",emptyDash(u.parkingNumber)));
+        info.addView(detailLine("شماره انباری",emptyDash(u.storageNumber)));
         body.addView(info,rowParams());
 
         long chargeDue=store.chargeDue(monthKey,number);
@@ -518,6 +520,8 @@ public class MainActivity extends Activity {
         form.addView(tenantBox);
 
         final EditText persons = labeledField(form,"تعداد نفرات ساکن",String.valueOf(u.occupants),InputType.TYPE_CLASS_NUMBER);
+        final EditText parking = labeledField(form,"شماره پارکینگ",u.parkingNumber,InputType.TYPE_CLASS_TEXT);
+        final EditText storage = labeledField(form,"شماره انباری",u.storageNumber,InputType.TYPE_CLASS_TEXT);
         final CheckBox meter = check("این واحد کنتور فرعی آب دارد",u.submeter);
         form.addView(meter);
 
@@ -561,6 +565,8 @@ public class MainActivity extends Activity {
             else if(vacantOcc.isChecked()) u.occupancy=DataStore.OCC_VACANT;
             else u.occupancy=DataStore.OCC_OWNER;
             u.occupants=DataStore.OCC_VACANT.equals(u.occupancy)?0:Math.max(0,safeInt(s(persons),1));
+            u.parkingNumber=s(parking);
+            u.storageNumber=s(storage);
             u.submeter=meter.isChecked();
             u.lastWaterReading=Math.max(0d,safeDouble(s(last),0d));
             u.notes=s(notes);
@@ -674,7 +680,7 @@ public class MainActivity extends Activity {
             long remain=Math.max(0,due-paid);
             int st=store.chargeStatus(monthKey,n);
 
-            LinearLayout r=financialRow("واحد "+fa(n),statusText(st)+" | مانده "+money(remain),st);
+            LinearLayout r=financialRow(unitTitle(n),statusText(st)+" | مانده "+money(remain),st);
             Button pay=button("ثبت پرداخت",Color.WHITE,BROWN,true);
             pay.setEnabled(due>0);
             pay.setAlpha(due>0?1f:.45f);
@@ -731,7 +737,7 @@ public class MainActivity extends Activity {
         form.addView(monthPicker,rowParams());
 
         AlertDialog dialog=new AlertDialog.Builder(this)
-                .setTitle("پرداخت شارژ واحد "+fa(unit))
+                .setTitle("پرداخت شارژ " + unitTitle(unit))
                 .setView(form)
                 .setNegativeButton("انصراف",null)
                 .setPositiveButton("پیش‌نمایش",null)
@@ -853,7 +859,7 @@ public class MainActivity extends Activity {
                 int st=store.waterStatus(monthKey,n);
 
                 String desc="سهم "+money(share)+" | پرداخت "+money(Math.min(paid,share))+" | مانده "+money(remain);
-                LinearLayout r=financialRow("واحد "+fa(n),desc,st);
+                LinearLayout r=financialRow(unitTitle(n),desc,st);
                 Button pay=button(st==3?"تسویه":"ثبت پرداخت",st==3?GREEN:Color.WHITE,st==3?SOFT_GREEN:BROWN,true);
                 pay.setEnabled(st!=3 && share>0);
                 pay.setOnClickListener(v->showWaterPaymentDialog(unit));
@@ -878,7 +884,7 @@ public class MainActivity extends Activity {
         form.addView(amount,rowParams());
 
         AlertDialog dialog=new AlertDialog.Builder(this)
-                .setTitle("پرداخت آب واحد "+fa(unit))
+                .setTitle("پرداخت آب " + unitTitle(unit))
                 .setView(form)
                 .setNegativeButton("انصراف",null)
                 .setPositiveButton("پیش‌نمایش",null)
@@ -1166,6 +1172,16 @@ public class MainActivity extends Activity {
                 .setTitle("گیرنده پیامک")
                 .setItems(labels.toArray(new String[0]),(d,w)->previewSms(phones.get(w),reminder(names.get(w),number,debt)))
                 .show();
+    }
+
+    private String unitTitle(int unit) {
+        DataStore.UnitInfo u=store.getUnit(unit);
+        String base="واحد " + fa(unit);
+        if(u==null) return base;
+        String name=u.residentName();
+        if(name==null || name.trim().isEmpty()) return base;
+        if(DataStore.OCC_VACANT.equals(u.occupancy)) return base + " (خالی)";
+        return base + " (" + name.trim() + ")";
     }
 
     private String reminder(String name,int unit,long debt) {
