@@ -32,6 +32,8 @@ public final class DataStore {
         public String tenantPhone = "";
         public String occupancy = OCC_OWNER;
         public int occupants = 1;
+        public String parkingNumber = "";
+        public String storageNumber = "";
         public boolean submeter = false;
         public double lastWaterReading = 0d;
         public String notes = "";
@@ -46,6 +48,8 @@ public final class DataStore {
             x.tenantPhone = tenantPhone;
             x.occupancy = occupancy;
             x.occupants = occupants;
+            x.parkingNumber = parkingNumber;
+            x.storageNumber = storageNumber;
             x.submeter = submeter;
             x.lastWaterReading = lastWaterReading;
             x.notes = notes;
@@ -196,6 +200,8 @@ public final class DataStore {
                     x.occupancy = (!x.tenant.trim().isEmpty() || !x.tenantPhone.trim().isEmpty()) ? OCC_TENANT : OCC_OWNER;
                 }
                 x.occupants = Math.max(0, o.optInt("occupants", 1));
+                x.parkingNumber = o.optString("parkingNumber", "");
+                x.storageNumber = o.optString("storageNumber", "");
                 x.submeter = o.optBoolean("submeter", false);
                 x.lastWaterReading = Math.max(0d, o.optDouble("lastWaterReading", 0d));
                 x.notes = o.optString("notes", "");
@@ -345,7 +351,7 @@ public final class DataStore {
 
     private JSONObject buildRoot() throws JSONException {
         JSONObject root = new JSONObject();
-        root.put("schema", 4);
+        root.put("schema", 5);
         root.put("initialFund", initialFund);
         root.put("smsTemplate", smsTemplate);
 
@@ -360,6 +366,8 @@ public final class DataStore {
             o.put("tenantPhone", u.tenantPhone);
             o.put("occupancy", u.occupancy);
             o.put("occupants", u.occupants);
+            o.put("parkingNumber", u.parkingNumber);
+            o.put("storageNumber", u.storageNumber);
             o.put("submeter", u.submeter);
             o.put("lastWaterReading", u.lastWaterReading);
             o.put("notes", u.notes);
