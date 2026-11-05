@@ -208,6 +208,7 @@ public class MainActivity extends Activity {
         else if ("finance".equals(screen)) showFinance();
         else if ("charge".equals(screen)) showCharge();
         else if ("water".equals(screen)) showWater();
+        else if ("otherPayments".equals(screen)) showOtherPayments();
         else if ("expenses".equals(screen)) showExpenses();
         else if ("fund".equals(screen)) showFund();
         else if ("sms".equals(screen)) showSmsSettings();
@@ -372,7 +373,8 @@ public class MainActivity extends Activity {
 
         List<DataStore.ChargePayment> payments=store.paymentsForUnit(number);
         List<DataStore.WaterPayment> wp=store.waterPaymentsForUnit(number);
-        if(!payments.isEmpty() || !wp.isEmpty()) {
+        List<DataStore.OtherPayment> other=store.otherPaymentsForUnit(number);
+        if(!payments.isEmpty() || !wp.isEmpty() || !other.isEmpty()) {
             body.addView(tv("سوابق پرداخت",15,DARK,true));
         }
 
@@ -401,6 +403,20 @@ public class MainActivity extends Activity {
                     .setMessage("پرداخت آب و انتقال مرتبط به شارژ حذف شود؟")
                     .setNegativeButton("انصراف",null)
                     .setPositiveButton("حذف",(d,w)->{store.deleteWaterPayment(p.id);showUnitDetail(number);})
+                    .show());
+            row.addView(del,lp(dp(58),dp(34)));
+            body.addView(row,rowParams());
+            shown++; if(shown>=4) break;
+        }
+
+        shown=0;
+        for(final DataStore.OtherPayment p:other) {
+            LinearLayout row=historyRow("سایر | "+p.title,money(p.amount),p.date);
+            Button del=smallDelete(v->new AlertDialog.Builder(this)
+                    .setTitle("حذف سایر پرداخت")
+                    .setMessage("این پرداخت حذف و مبلغ آن از صندوق کسر شود؟")
+                    .setNegativeButton("انصراف",null)
+                    .setPositiveButton("حذف",(d,w)->{store.deleteOtherPayment(p.id);showUnitDetail(number);})
                     .show());
             row.addView(del,lp(dp(58),dp(34)));
             body.addView(row,rowParams());
@@ -612,7 +628,8 @@ public class MainActivity extends Activity {
         body.addView(tv("مدیریت مالی",19,DARK,true));
         body.addView(tv("ثبت و کنترل دریافت‌ها، هزینه‌ها و صندوق",10,MUTED,false));
         body.addView(menuButton(R.drawable.ic_payments,"شارژ ماهانه","مبلغ، تاریخ و پرداخت چندماهه",v->showCharge()));
-        body.addView(menuButton(R.drawable.ic_water_drop,"قبض آب","مصرف، هزینه عمومی و پرداخت واحدها",v->showWater()));
+        body.addView(menuButton(R.drawable.ic_water_drop,"قبض آب","کارکرد کل قبض، مصرف کنتورهای فرعی و پرداخت واحدها",v->showWater()));
+        body.addView(menuButton(R.drawable.ic_payments,"سایر پرداخت‌ها","دریافت‌های هر واحد بجز شارژ و قبض آب",v->showOtherPayments()));
         body.addView(menuButton(R.drawable.ic_receipt,"هزینه‌های ساختمان","برق عمومی، نگهبان، نظافت، تعمیرات و ...",v->showExpenses()));
         body.addView(menuButton(R.drawable.ic_wallet,"صندوق بلوک","موجودی، دریافتی‌ها، هزینه‌ها و اشتراک گزارش",v->showFund()));
         body.addView(menuButton(R.drawable.ic_sms,"تنظیم متن پیامک","متن یادآوری بدهی مالک یا مستأجر",v->showSmsSettings()));
@@ -779,17 +796,15 @@ public class MainActivity extends Activity {
         LinearLayout body=vbox();
         body.setPadding(dp(10),dp(12),dp(10),dp(18));
         body.addView(pageTitle("قبض آب " + PersianDate.monthLabel(monthKey)));
-        body.addView(tv("هزینه عمومی بین همه واحدها تقسیم می‌شود. هزینه مصرف بر اساس کارکرد کل قبض و کنتورهای فرعی محاسبه می‌شود.",10,MUTED,false));
+        body.addView(tv("مبلغ آب مصرفی و کارکرد کل درج‌شده روی قبض را وارد کنید. سهم واحدهای دارای کنتور فرعی از روی مصرف واقعی و باقی‌مانده بین واحدهای بدون کنتور تقسیم می‌شود.",10,MUTED,false));
 
-        final EditText consumptionAmount=moneyEdit("هزینه مصرف آب (تومان)",md.waterConsumptionAmount>0?String.valueOf(md.waterConsumptionAmount):"");
-        final EditText generalAmount=moneyEdit("هزینه عمومی: فاضلاب، مالیات، آبونمان و ...",md.waterGeneralAmount>0?String.valueOf(md.waterGeneralAmount):"");
+        final EditText consumptionAmount=moneyEdit("مبلغ آب مصرفی روی قبض (تومان)",md.waterConsumptionAmount>0?String.valueOf(md.waterConsumptionAmount):"");
         final EditText main=edit("کارکرد کل درج‌شده روی قبض",md.mainWaterConsumption>0?trim(md.mainWaterConsumption):"",
                 InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
         body.addView(consumptionAmount,rowParams());
-        body.addView(generalAmount,rowParams());
         body.addView(main,rowParams());
 
-        final CheckBox byPeople=check("باقی‌مانده مصرف واحدهای بدون کنتور بر اساس تعداد نفرات تقسیم شود",md.waterSplitByOccupants);
+        final CheckBox byPeople=check("باقی‌مانده واحدهای بدون کنتور بر اساس تعداد نفرات تقسیم شود",md.waterSplitByOccupants);
         body.addView(byPeople);
 
         final Map<Integer,EditText> currents=new HashMap<>();
@@ -797,16 +812,16 @@ public class MainActivity extends Activity {
         for(DataStore.UnitInfo u:store.getUnits()){
             if(!u.submeter) continue;
             anyMeter=true;
-            LinearLayout meterCard=sectionCard("کنتور فرعی واحد "+fa(u.number),R.drawable.ic_water_drop);
+            LinearLayout meterCard=sectionCard("کنتور فرعی " + unitTitle(u.number),R.drawable.ic_water_drop);
             double prev=store.previousReadingForUnit(monthKey,u.number);
             meterCard.addView(tv("عدد قبلی: "+PersianDate.toFaDigits(trim(prev)),10,MUTED,false));
-            EditText c=edit("عدد جدید کنتور",trim(store.savedCurrentReading(monthKey,u.number)),
+            EditText current=edit("عدد جدید کنتور",trim(store.savedCurrentReading(monthKey,u.number)),
                     InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
-            meterCard.addView(c,rowParams());
+            meterCard.addView(current,rowParams());
             body.addView(meterCard,rowParams());
-            currents.put(u.number,c);
+            currents.put(u.number,current);
         }
-        if(!anyMeter) body.addView(tv("هیچ واحدی کنتور فرعی ندارد؛ هزینه مصرف با روش انتخاب‌شده تقسیم می‌شود.",10,BROWN,false));
+        if(!anyMeter) body.addView(tv("هیچ واحدی کنتور فرعی ندارد؛ کل مبلغ آب با روش انتخاب‌شده بین واحدها تقسیم می‌شود.",10,BROWN,false));
 
         LinearLayout actions=hbox();
         Button calc=button("محاسبه و پیش‌نمایش",Color.WHITE,BROWN,true);
@@ -818,23 +833,22 @@ public class MainActivity extends Activity {
 
         calc.setOnClickListener(v->{
             long consAmount=safeLong(s(consumptionAmount),-1);
-            long genAmount=safeLong(s(generalAmount),-1);
             double totalUse=safeDouble(s(main),-1);
             Map<Integer,Double> readings=new HashMap<>();
             for(DataStore.UnitInfo u:store.getUnits()) if(u.submeter) {
                 readings.put(u.number,safeDouble(s(currents.get(u.number)),-1));
             }
             try{
-                DataStore.WaterCalculation r=store.calculateWater(monthKey,consAmount,genAmount,totalUse,byPeople.isChecked(),readings);
+                DataStore.WaterCalculation r=store.calculateWater(monthKey,consAmount,totalUse,byPeople.isChecked(),readings);
                 StringBuilder msg=new StringBuilder();
                 for(int n=1;n<=12;n++){
                     DataStore.UnitInfo u=store.getUnit(n);
-                    msg.append("واحد ").append(fa(n)).append(": ");
+                    msg.append(unitTitle(n)).append(": ");
                     if(u!=null && u.submeter) {
                         Double use=r.consumptions.get(n);
                         msg.append("مصرف ").append(PersianDate.toFaDigits(trim(use==null?0d:use))).append(" | ");
                     }
-                    msg.append("جمع ").append(money(mapLong(r.finalShares,n))).append("\n");
+                    msg.append("سهم ").append(money(mapLong(r.finalShares,n))).append("\n");
                 }
 
                 new AlertDialog.Builder(this)
@@ -842,14 +856,14 @@ public class MainActivity extends Activity {
                         .setMessage(msg.toString())
                         .setNegativeButton("برگشت",null)
                         .setPositiveButton("ذخیره قبض",(d,w)->{
-                            store.saveWaterBill(monthKey,consAmount,genAmount,totalUse,byPeople.isChecked(),readings);
+                            store.saveWaterBill(monthKey,consAmount,totalUse,byPeople.isChecked(),readings);
                             showWater();
                             toast("قبض آب ذخیره شد");
                         }).show();
             }catch(Exception ex){alert("خطا در محاسبه",ex.getMessage()==null?"اطلاعات واردشده را بررسی کنید":ex.getMessage());}
         });
 
-        if(md.waterConsumptionAmount>0 || md.waterGeneralAmount>0){
+        if(md.waterConsumptionAmount>0){
             body.addView(tv("سهم و پرداخت واحدها",14,DARK,true));
             for(int n=1;n<=12;n++){
                 final int unit=n;
@@ -859,12 +873,12 @@ public class MainActivity extends Activity {
                 int st=store.waterStatus(monthKey,n);
 
                 String desc="سهم "+money(share)+" | پرداخت "+money(Math.min(paid,share))+" | مانده "+money(remain);
-                LinearLayout r=financialRow(unitTitle(n),desc,st);
+                LinearLayout row=financialRow(unitTitle(n),desc,st);
                 Button pay=button(st==3?"تسویه":"ثبت پرداخت",st==3?GREEN:Color.WHITE,st==3?SOFT_GREEN:BROWN,true);
                 pay.setEnabled(st!=3 && share>0);
                 pay.setOnClickListener(v->showWaterPaymentDialog(unit));
-                r.addView(pay,lp(dp(92),dp(38)));
-                body.addView(r,rowParams());
+                row.addView(pay,lp(dp(92),dp(38)));
+                body.addView(row,rowParams());
             }
         }
 
@@ -928,6 +942,73 @@ public class MainActivity extends Activity {
         return x==null?0L:x;
     }
 
+    private void showOtherPayments() {
+        LinearLayout body=vbox();
+        body.setPadding(dp(10),dp(12),dp(10),dp(18));
+        body.addView(pageTitle("سایر پرداخت‌ها - " + PersianDate.monthLabel(monthKey)));
+        body.addView(tv("برای دریافت‌های هر واحد بجز شارژ و قبض آب؛ مبلغ ثبت‌شده مستقیم به صندوق اضافه می‌شود.",10,MUTED,false));
+
+        final int[] selectedUnit={1};
+        LinearLayout unitPicker=hbox();
+        Button next=button("›",BROWN,CREAM2,true);
+        TextView unitLabel=center(unitTitle(selectedUnit[0]),12,DARK,true);
+        Button prev=button("‹",BROWN,CREAM2,true);
+        next.setOnClickListener(v->{
+            selectedUnit[0]=selectedUnit[0]>=12?1:selectedUnit[0]+1;
+            unitLabel.setText(unitTitle(selectedUnit[0]));
+        });
+        prev.setOnClickListener(v->{
+            selectedUnit[0]=selectedUnit[0]<=1?12:selectedUnit[0]-1;
+            unitLabel.setText(unitTitle(selectedUnit[0]));
+        });
+        unitPicker.addView(next,lp(dp(48),dp(42)));
+        unitPicker.addView(unitLabel,new LinearLayout.LayoutParams(0,dp(42),1f));
+        unitPicker.addView(prev,lp(dp(48),dp(42)));
+        body.addView(unitPicker,rowParams());
+
+        final EditText title=edit("عنوان پرداخت؛ مثال: تعمیر آیفون","",InputType.TYPE_CLASS_TEXT);
+        final EditText amount=moneyEdit("مبلغ پرداختی (تومان)","");
+        final EditText date=edit("تاریخ پرداخت",PersianDate.todayKey(),InputType.TYPE_CLASS_TEXT);
+        body.addView(title,rowParams());
+        body.addView(amount,rowParams());
+        body.addView(date,rowParams());
+
+        Button add=button("ثبت پرداخت و افزودن به صندوق",Color.WHITE,BROWN,true);
+        add.setOnClickListener(v->{
+            String t=s(title);
+            long a=safeLong(s(amount),-1);
+            if(TextUtils.isEmpty(t)){toast("عنوان پرداخت را وارد کنید");return;}
+            if(a<=0){toast("مبلغ پرداخت را صحیح وارد کنید");return;}
+            try{
+                store.addOtherPayment(selectedUnit[0],monthKey,t,a,s(date));
+                showOtherPayments();
+                toast("پرداخت ثبت و به صندوق اضافه شد");
+            }catch(Exception ex){alert("خطا",ex.getMessage()==null?"ثبت انجام نشد":ex.getMessage());}
+        });
+        body.addView(add,buttonParams());
+
+        LinearLayout sum=sectionCard("دریافتی سایر پرداخت‌های این ماه",R.drawable.ic_payments);
+        sum.addView(detailLine("جمع",money(store.monthOtherCashIncome(monthKey))));
+        body.addView(sum,rowParams());
+
+        body.addView(tv("سوابق این ماه",14,DARK,true));
+        List<DataStore.OtherPayment> list=store.otherPaymentsForMonth(monthKey);
+        if(list.isEmpty()) body.addView(tv("برای این ماه سایر پرداختی ثبت نشده است.",10,MUTED,false));
+        for(final DataStore.OtherPayment p:list){
+            LinearLayout row=historyRow(unitTitle(p.unit)+" | "+p.title,money(p.amount),p.date);
+            Button del=smallDelete(v->new AlertDialog.Builder(this)
+                    .setTitle("حذف پرداخت")
+                    .setMessage("این پرداخت حذف شود؟ مبلغ آن از موجودی صندوق نیز کسر می‌شود.")
+                    .setNegativeButton("انصراف",null)
+                    .setPositiveButton("حذف",(d,w)->{store.deleteOtherPayment(p.id);showOtherPayments();})
+                    .show());
+            row.addView(del,lp(dp(58),dp(34)));
+            body.addView(row,rowParams());
+        }
+
+        setPage("otherPayments",scroll(body));
+    }
+
     private void showExpenses() {
         LinearLayout body=vbox();
         body.setPadding(dp(10),dp(12),dp(10),dp(18));
@@ -985,6 +1066,7 @@ public class MainActivity extends Activity {
         LinearLayout stats=hbox();
         miniStat(stats,"شارژ",store.totalChargeCashIncome(),GREEN);
         miniStat(stats,"آب",store.totalWaterCashIncome(),GREEN);
+        miniStat(stats,"سایر",store.totalOtherCashIncome(),GREEN);
         miniStat(stats,"هزینه",store.totalExpenses(),RED);
         body.addView(stats,rowParams());
 
@@ -1118,12 +1200,13 @@ public class MainActivity extends Activity {
         summary.addView(detailLine("شارژ وصول‌شده",money(store.monthChargePaid(monthKey))));
         summary.addView(detailLine("آب تعیین‌شده",money(store.monthWaterDue(monthKey))));
         summary.addView(detailLine("آب وصول‌شده",money(store.monthWaterPaid(monthKey))));
+        summary.addView(detailLine("سایر پرداخت‌های ماه",money(store.monthOtherCashIncome(monthKey))));
         summary.addView(detailLine("هزینه‌های ماه",money(store.monthExpenses(monthKey))));
         summary.addView(detailLine("کل مطالبات تا این ماه",money(store.totalDebtThrough(monthKey))));
         summary.addView(detailLine("موجودی صندوق",money(store.fundBalance())));
         body.addView(summary,rowParams());
 
-        Button image=button("اشتراک گزارشی گزارش ماه",Color.WHITE,BROWN,true);
+        Button image=button("اشتراک گزارش ماه",Color.WHITE,BROWN,true);
         image.setOnClickListener(v->showMonthlyReportImage());
         body.addView(image,buttonParams());
 
@@ -1229,10 +1312,9 @@ public class MainActivity extends Activity {
 
     private void showWaterReportImage() {
         DataStore.MonthData md=store.getMonth(monthKey);
-        if(md.waterConsumptionAmount<=0 && md.waterGeneralAmount<=0){toast("ابتدا قبض آب را ثبت کنید");return;}
+        if(md.waterConsumptionAmount<=0){toast("ابتدا قبض آب را ثبت کنید");return;}
         List<ReportImageUtil.Row> rows=new ArrayList<>();
-        rows.add(new ReportImageUtil.Row("هزینه مصرف آب",money(md.waterConsumptionAmount),4));
-        rows.add(new ReportImageUtil.Row("هزینه عمومی",money(md.waterGeneralAmount),4));
+        rows.add(new ReportImageUtil.Row("مبلغ آب مصرفی",money(md.waterConsumptionAmount),4));
         rows.add(new ReportImageUtil.Row("کارکرد کل قبض",PersianDate.toFaDigits(trim(md.mainWaterConsumption))));
         rows.add(new ReportImageUtil.Row("روش تقسیم بدون کنتور",md.waterSplitByOccupants?"بر اساس تعداد نفرات":"تقسیم مساوی"));
         for(int n=1;n<=12;n++) {
@@ -1248,6 +1330,7 @@ public class MainActivity extends Activity {
         rows.add(new ReportImageUtil.Row("موجودی اولیه",money(store.getInitialFund())));
         rows.add(new ReportImageUtil.Row("دریافتی نقدی شارژ",money(store.totalChargeCashIncome()),1));
         rows.add(new ReportImageUtil.Row("دریافتی نقدی آب",money(store.totalWaterCashIncome()),1));
+        rows.add(new ReportImageUtil.Row("سایر دریافتی‌ها",money(store.totalOtherCashIncome()),1));
         rows.add(new ReportImageUtil.Row("کل هزینه‌ها",money(store.totalExpenses()),2));
         rows.add(new ReportImageUtil.Row("موجودی فعلی صندوق",money(store.fundBalance()),4));
         rows.add(new ReportImageUtil.Row("هزینه‌های "+PersianDate.monthLabel(monthKey),money(store.monthExpenses(monthKey)),2));
@@ -1263,6 +1346,7 @@ public class MainActivity extends Activity {
         rows.add(new ReportImageUtil.Row("شارژ وصول‌شده",money(store.monthChargePaid(monthKey)),1));
         rows.add(new ReportImageUtil.Row("آب تعیین‌شده",money(store.monthWaterDue(monthKey))));
         rows.add(new ReportImageUtil.Row("آب وصول‌شده",money(store.monthWaterPaid(monthKey)),1));
+        rows.add(new ReportImageUtil.Row("سایر پرداخت‌های ماه",money(store.monthOtherCashIncome(monthKey)),1));
         rows.add(new ReportImageUtil.Row("هزینه ماه",money(store.monthExpenses(monthKey)),2));
         rows.add(new ReportImageUtil.Row("کل مطالبات تا این ماه",money(store.totalDebtThrough(monthKey)),2));
         rows.add(new ReportImageUtil.Row("موجودی صندوق",money(store.fundBalance()),4));
