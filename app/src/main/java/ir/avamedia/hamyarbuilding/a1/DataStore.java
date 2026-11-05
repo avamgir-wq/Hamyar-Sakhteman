@@ -94,6 +94,15 @@ public final class DataStore {
         public long amount;
     }
 
+    public static final class OtherPayment {
+        public long id;
+        public int unit;
+        public String monthKey = "";
+        public String title = "";
+        public String date = "";
+        public long amount;
+    }
+
     public static final class ChargePayment {
         public long id;
         public int unit;
@@ -147,6 +156,7 @@ public final class DataStore {
     private final List<UnitInfo> units = new ArrayList<>();
     private final Map<String, MonthData> months = new HashMap<>();
     private final List<Expense> expenses = new ArrayList<>();
+    private final List<OtherPayment> otherPayments = new ArrayList<>();
     private final List<ChargePayment> chargePayments = new ArrayList<>();
     private final List<WaterPayment> waterPayments = new ArrayList<>();
 
@@ -177,6 +187,7 @@ public final class DataStore {
         units.clear();
         months.clear();
         expenses.clear();
+        otherPayments.clear();
         chargePayments.clear();
         waterPayments.clear();
 
@@ -256,6 +267,22 @@ public final class DataStore {
             }
         }
 
+        JSONArray op = root.optJSONArray("otherPayments");
+        if (op != null) {
+            for (int i = 0; i < op.length(); i++) {
+                JSONObject o = op.optJSONObject(i);
+                if (o == null) continue;
+                OtherPayment p = new OtherPayment();
+                p.id = o.optLong("id", System.currentTimeMillis() + i);
+                p.unit = o.optInt("unit", 0);
+                p.monthKey = o.optString("monthKey", "");
+                p.title = o.optString("title", "");
+                p.date = o.optString("date", "");
+                p.amount = Math.max(0L, o.optLong("amount", 0L));
+                if (p.unit >= 1 && p.unit <= 12 && p.amount > 0L) otherPayments.add(p);
+            }
+        }
+
         JSONArray cp = root.optJSONArray("chargePayments");
         if (cp != null) {
             for (int i = 0; i < cp.length(); i++) {
@@ -306,6 +333,7 @@ public final class DataStore {
         units.clear();
         months.clear();
         expenses.clear();
+        otherPayments.clear();
         chargePayments.clear();
         waterPayments.clear();
         initialFund = 0L;
@@ -351,7 +379,7 @@ public final class DataStore {
 
     private JSONObject buildRoot() throws JSONException {
         JSONObject root = new JSONObject();
-        root.put("schema", 5);
+        root.put("schema", 6);
         root.put("initialFund", initialFund);
         root.put("smsTemplate", smsTemplate);
 
@@ -406,6 +434,19 @@ public final class DataStore {
             ea.put(o);
         }
         root.put("expenses", ea);
+
+        JSONArray opa = new JSONArray();
+        for (OtherPayment p : otherPayments) {
+            JSONObject o = new JSONObject();
+            o.put("id", p.id);
+            o.put("unit", p.unit);
+            o.put("monthKey", p.monthKey);
+            o.put("title", p.title);
+            o.put("date", p.date);
+            o.put("amount", p.amount);
+            opa.put(o);
+        }
+        root.put("otherPayments", opa);
 
         JSONArray pa = new JSONArray();
         for (ChargePayment p : chargePayments) {
@@ -663,10 +704,10 @@ public final class DataStore {
         return x == null ? previousReadingForUnit(monthKey, unitNumber) : x;
     }
 
-    public WaterCalculation calculateWater(String monthKey, long consumptionAmount, long generalAmount,
+    public WaterCalculation calculateWater(String monthKey, long consumptionAmount,
                                            double mainConsumption, boolean splitByOccupants,
                                            Map<Integer, Double> currentReadings) {
-        if (consumptionAmount < 0L || generalAmount < 0L) throw new IllegalArgumentException("مبلغ قبض نمی‌تواند منفی باشد.");
+        if (consumptionAmount < 0L) throw new IllegalArgumentException("مبلغ قبض نمی‌تواند منفی باشد.");
         if (mainConsumption <= 0d && consumptionAmount > 0L) throw new IllegalArgumentException("کارکرد کل درج‌شده روی قبض را وارد کنید.");
 
         List<UnitInfo> metered = new ArrayList<>();
@@ -678,16 +719,8 @@ public final class DataStore {
 
         WaterCalculation r = new WaterCalculation();
         r.consumptionAmount = consumptionAmount;
-        r.generalAmount = generalAmount;
+        r.generalAmount = 0L;
         r.mainConsumption = mainConsumption;
-
-        long generalEach = generalAmount / 12L;
-        long generalRem = generalAmount % 12L;
-        for (int i = 0; i < units.size(); i++) {
-            UnitInfo u = units.get(i);
-            long g = generalEach + (i < generalRem ? 1L : 0L);
-            r.generalShares.put(u.number, g);
-        }
 
         double rate = mainConsumption > 0d ? ((double) consumptionAmount / mainConsumption) : 0d;
         long meteredAllocated = 0L;
@@ -751,8 +784,7 @@ public final class DataStore {
 
         for (UnitInfo u : units) {
             long c = value(r.consumptionShares, u.number);
-            long g = value(r.generalShares, u.number);
-            r.finalShares.put(u.number, c + g);
+            r.finalShares.put(u.number, c);
         }
         return r;
     }
@@ -769,18 +801,18 @@ public final class DataStore {
         return x == null ? 0L : x;
     }
 
-    public WaterCalculation saveWaterBill(String monthKey, long consumptionAmount, long generalAmount,
+    public WaterCalculation saveWaterBill(String monthKey, long consumptionAmount,
                                           double mainConsumption, boolean splitByOccupants,
                                           Map<Integer, Double> currentReadings) {
-        WaterCalculation r = calculateWater(monthKey, consumptionAmount, generalAmount, mainConsumption, splitByOccupants, currentReadings);
+        WaterCalculation r = calculateWater(monthKey, consumptionAmount, mainConsumption, splitByOccupants, currentReadings);
         MonthData md = getMonth(monthKey);
         md.waterConsumptionAmount = consumptionAmount;
-        md.waterGeneralAmount = generalAmount;
+        md.waterGeneralAmount = 0L;
         md.mainWaterConsumption = mainConsumption;
         md.waterSplitByOccupants = splitByOccupants;
         md.waterShare.clear(); md.waterShare.putAll(r.finalShares);
         md.waterConsumptionShare.clear(); md.waterConsumptionShare.putAll(r.consumptionShares);
-        md.waterGeneralShare.clear(); md.waterGeneralShare.putAll(r.generalShares);
+        md.waterGeneralShare.clear();
         md.waterConsumption.clear(); md.waterConsumption.putAll(r.consumptions);
         md.waterCurrent.clear();
         if (currentReadings != null) md.waterCurrent.putAll(currentReadings);
@@ -899,6 +931,57 @@ public final class DataStore {
         save();
     }
 
+    public void addOtherPayment(int unit, String monthKey, String title, long amount, String date) {
+        if (unit < 1 || unit > 12) throw new IllegalArgumentException("واحد انتخاب‌شده صحیح نیست.");
+        if (amount <= 0L) throw new IllegalArgumentException("مبلغ پرداخت باید بیشتر از صفر باشد.");
+        OtherPayment p = new OtherPayment();
+        p.id = System.currentTimeMillis() + otherPayments.size();
+        p.unit = unit;
+        p.monthKey = monthKey == null ? "" : monthKey;
+        p.title = title == null ? "" : title.trim();
+        p.date = date == null ? "" : date.trim();
+        p.amount = amount;
+        otherPayments.add(p);
+        save();
+    }
+
+    public void deleteOtherPayment(long id) {
+        for (int i = otherPayments.size() - 1; i >= 0; i--) {
+            if (otherPayments.get(i).id == id) otherPayments.remove(i);
+        }
+        save();
+    }
+
+    public List<OtherPayment> otherPaymentsForMonth(String monthKey) {
+        List<OtherPayment> out = new ArrayList<>();
+        for (OtherPayment p : otherPayments) if (monthKey.equals(p.monthKey)) out.add(p);
+        Collections.sort(out, new Comparator<OtherPayment>() {
+            @Override public int compare(OtherPayment a, OtherPayment b) { return Long.compare(b.id, a.id); }
+        });
+        return out;
+    }
+
+    public List<OtherPayment> otherPaymentsForUnit(int unit) {
+        List<OtherPayment> out = new ArrayList<>();
+        for (OtherPayment p : otherPayments) if (p.unit == unit) out.add(p);
+        Collections.sort(out, new Comparator<OtherPayment>() {
+            @Override public int compare(OtherPayment a, OtherPayment b) { return Long.compare(b.id, a.id); }
+        });
+        return out;
+    }
+
+    public long monthOtherCashIncome(String monthKey) {
+        long sum = 0L;
+        for (OtherPayment p : otherPayments) if (monthKey.equals(p.monthKey)) sum += p.amount;
+        return sum;
+    }
+
+    public long totalOtherCashIncome() {
+        long sum = 0L;
+        for (OtherPayment p : otherPayments) sum += p.amount;
+        return sum;
+    }
+
     public void addExpense(String monthKey, String title, long amount, String date) {
         Expense ex = new Expense();
         ex.id = System.currentTimeMillis();
@@ -1005,7 +1088,7 @@ public final class DataStore {
     }
 
     public long totalIncome() {
-        return totalChargeCashIncome() + totalWaterCashIncome();
+        return totalChargeCashIncome() + totalWaterCashIncome() + totalOtherCashIncome();
     }
 
     public long getInitialFund() { return initialFund; }
