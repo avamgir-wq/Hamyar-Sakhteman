@@ -69,6 +69,7 @@ public class MainActivity extends Activity {
     private String monthKey;
     private String screen = "dashboard";
     private int detailUnit = 0;
+    private long detailExpenseId = 0L;
     private final Map<String, LinearLayout> navItems = new LinkedHashMap<>();
 
     @Override
@@ -210,6 +211,7 @@ public class MainActivity extends Activity {
         else if ("water".equals(screen)) showWater();
         else if ("otherPayments".equals(screen)) showOtherPayments();
         else if ("expenses".equals(screen)) showExpenses();
+        else if ("expenseDetail".equals(screen) && detailExpenseId > 0L) showExpenseDetail(detailExpenseId);
         else if ("fund".equals(screen)) showFund();
         else if ("sms".equals(screen)) showSmsSettings();
         else if ("backup".equals(screen)) showBackup();
@@ -356,6 +358,9 @@ public class MainActivity extends Activity {
         fin.addView(detailLine("سهم آب",water<=0?"ثبت نشده":money(water)));
         fin.addView(detailLine("پرداخت آب",money(Math.min(waterPaid,water))));
         fin.addView(detailLine("مانده آب",money(store.waterRemaining(monthKey,number))));
+        fin.addView(detailLine("سهم هزینه‌های تقسیم‌شده",money(store.unitExpenseDue(monthKey,number))));
+        fin.addView(detailLine("پرداخت سهم هزینه‌ها",money(store.unitExpensePaid(monthKey,number))));
+        fin.addView(detailLine("مانده سهم هزینه‌ها",money(store.unitExpenseRemaining(monthKey,number))));
         fin.addView(detailLine("بدهی " + PersianDate.monthLabel(monthKey),money(monthDebt)));
         fin.addView(detailLine("کل بدهی تا این ماه",money(totalDebt)));
         body.addView(fin,rowParams());
@@ -374,7 +379,8 @@ public class MainActivity extends Activity {
         List<DataStore.ChargePayment> payments=store.paymentsForUnit(number);
         List<DataStore.WaterPayment> wp=store.waterPaymentsForUnit(number);
         List<DataStore.OtherPayment> other=store.otherPaymentsForUnit(number);
-        if(!payments.isEmpty() || !wp.isEmpty() || !other.isEmpty()) {
+        List<DataStore.ExpensePayment> expensePay=store.expensePaymentsForUnit(number);
+        if(!payments.isEmpty() || !wp.isEmpty() || !other.isEmpty() || !expensePay.isEmpty()) {
             body.addView(tv("سوابق پرداخت",15,DARK,true));
         }
 
@@ -417,6 +423,22 @@ public class MainActivity extends Activity {
                     .setMessage("این پرداخت حذف و مبلغ آن از صندوق کسر شود؟")
                     .setNegativeButton("انصراف",null)
                     .setPositiveButton("حذف",(d,w)->{store.deleteOtherPayment(p.id);showUnitDetail(number);})
+                    .show());
+            row.addView(del,lp(dp(58),dp(34)));
+            body.addView(row,rowParams());
+            shown++; if(shown>=4) break;
+        }
+
+        shown=0;
+        for(final DataStore.ExpensePayment p:expensePay) {
+            DataStore.Expense ex=store.getExpense(p.expenseId);
+            String title=ex==null?"سهم هزینه":ex.title;
+            LinearLayout row=historyRow("سهم هزینه | "+title,money(p.amount),p.date);
+            Button del=smallDelete(v->new AlertDialog.Builder(this)
+                    .setTitle("حذف پرداخت سهم هزینه")
+                    .setMessage("این پرداخت حذف و مبلغ آن از صندوق کسر شود؟")
+                    .setNegativeButton("انصراف",null)
+                    .setPositiveButton("حذف",(d,w)->{store.deleteExpensePayment(p.id);showUnitDetail(number);})
                     .show());
             row.addView(del,lp(dp(58),dp(34)));
             body.addView(row,rowParams());
@@ -630,7 +652,7 @@ public class MainActivity extends Activity {
         body.addView(menuButton(R.drawable.ic_payments,"شارژ ماهانه","مبلغ، تاریخ و پرداخت چندماهه",v->showCharge()));
         body.addView(menuButton(R.drawable.ic_water_drop,"قبض آب","کارکرد کل قبض، مصرف کنتورهای فرعی و پرداخت واحدها",v->showWater()));
         body.addView(menuButton(R.drawable.ic_payments,"سایر پرداخت‌ها","دریافت‌های هر واحد بجز شارژ و قبض آب",v->showOtherPayments()));
-        body.addView(menuButton(R.drawable.ic_receipt,"هزینه‌های ساختمان","برق عمومی، نگهبان، نظافت، تعمیرات و ...",v->showExpenses()));
+        body.addView(menuButton(R.drawable.ic_receipt,"هزینه‌های ساختمان","پرداخت از صندوق یا تقسیم و وصول سهم واحدها",v->showExpenses()));
         body.addView(menuButton(R.drawable.ic_wallet,"صندوق بلوک","موجودی، دریافتی‌ها، هزینه‌ها و اشتراک گزارش",v->showFund()));
         body.addView(menuButton(R.drawable.ic_sms,"تنظیم متن پیامک","متن یادآوری بدهی مالک یا مستأجر",v->showSmsSettings()));
         body.addView(menuButton(R.drawable.ic_backup,"پشتیبان‌گیری","خروجی و بازیابی اطلاعات برنامه",v->showBackup()));
@@ -1013,41 +1035,171 @@ public class MainActivity extends Activity {
         LinearLayout body=vbox();
         body.setPadding(dp(10),dp(12),dp(10),dp(18));
         body.addView(pageTitle("هزینه‌های " + PersianDate.monthLabel(monthKey)));
+        body.addView(tv("هنگام ثبت مشخص کنید هزینه از صندوق/شارژ پرداخت می‌شود یا باید بین ۱۲ واحد تقسیم و دوباره وصول شود.",10,MUTED,false));
 
-        final EditText title=edit("عنوان هزینه؛ مثال: برق عمومی","",InputType.TYPE_CLASS_TEXT);
+        final EditText title=edit("عنوان هزینه؛ مثال: تعمیر آسانسور","",InputType.TYPE_CLASS_TEXT);
         final EditText amount=moneyEdit("مبلغ (تومان)","");
         final EditText date=edit("تاریخ",PersianDate.todayKey(),InputType.TYPE_CLASS_TEXT);
         body.addView(title,rowParams());
         body.addView(amount,rowParams());
         body.addView(date,rowParams());
 
+        body.addView(tv("نحوه تأمین هزینه",11,DARK,true));
+        final RadioGroup funding=new RadioGroup(this);
+        funding.setOrientation(RadioGroup.VERTICAL);
+        funding.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        final RadioButton fromFund=radio("از محل شارژ و صندوق پرداخت شود");
+        final RadioButton fromUnits=radio("بین ۱۲ واحد تقسیم شود و سهم واحدها وصول شود");
+        funding.addView(fromFund);
+        funding.addView(fromUnits);
+        fromFund.setChecked(true);
+        body.addView(funding,rowParams());
+
         Button add=button("＋ ثبت هزینه",Color.WHITE,BROWN,true);
         add.setOnClickListener(v->{
             String t=s(title);
             long a=safeLong(s(amount),-1);
             if(TextUtils.isEmpty(t)||a<=0){toast("عنوان و مبلغ هزینه را وارد کنید");return;}
-            store.addExpense(monthKey,t,a,s(date));
-            showExpenses();
-            toast("هزینه ثبت شد");
+            String mode=fromUnits.isChecked()?DataStore.EXPENSE_UNITS:DataStore.EXPENSE_FUND;
+            DataStore.Expense ex=store.addExpense(monthKey,t,a,s(date),mode);
+            if(DataStore.EXPENSE_UNITS.equals(mode)){
+                detailExpenseId=ex.id;
+                showExpenseDetail(ex.id);
+                toast("هزینه ثبت و بین ۱۲ واحد تقسیم شد");
+            } else {
+                showExpenses();
+                toast("هزینه از محل صندوق ثبت شد");
+            }
         });
         body.addView(add,buttonParams());
 
-        LinearLayout sum=sectionCard("جمع هزینه ماه",R.drawable.ic_payments);
-        sum.addView(detailLine("مبلغ",money(store.monthExpenses(monthKey))));
+        LinearLayout sum=sectionCard("خلاصه هزینه‌های ماه",R.drawable.ic_payments);
+        sum.addView(detailLine("کل هزینه‌ها",money(store.monthExpenses(monthKey))));
+        sum.addView(detailLine("از محل صندوق/شارژ",money(store.monthFundExpenses(monthKey))));
+        sum.addView(detailLine("تقسیم‌شده بین واحدها",money(store.monthAllocatedExpenses(monthKey))));
+        sum.addView(detailLine("وصول سهم واحدها",money(store.monthExpenseReimbursements(monthKey))));
+        sum.addView(detailLine("مانده قابل وصول",money(store.monthExpenseReceivable(monthKey))));
         body.addView(sum,rowParams());
 
-        for(final DataStore.Expense e:store.expensesForMonth(monthKey)){
-            LinearLayout r=historyRow(e.title,money(e.amount),e.date);
+        List<DataStore.Expense> list=store.expensesForMonth(monthKey);
+        if(list.isEmpty()) body.addView(tv("برای این ماه هزینه‌ای ثبت نشده است.",10,MUTED,false));
+
+        for(final DataStore.Expense e:list){
+            boolean allocated=DataStore.EXPENSE_UNITS.equals(e.fundingMode);
+            String sub;
+            if(allocated){
+                sub="تقسیم بین واحدها | وصول "+money(store.expenseTotalPaid(e.id))+" | مانده "+money(store.expenseTotalRemaining(e.id));
+            } else {
+                sub="پرداخت از محل صندوق/شارژ | "+e.date;
+            }
+            LinearLayout row=historyRow(e.title,money(e.amount),sub);
+
+            if(allocated){
+                Button status=button("وضعیت",BROWN,CREAM2,true);
+                status.setOnClickListener(v->{detailExpenseId=e.id;showExpenseDetail(e.id);});
+                row.addView(status,lp(dp(72),dp(36)));
+            }
+
             Button del=smallDelete(v->new AlertDialog.Builder(this)
                     .setTitle("حذف هزینه")
-                    .setMessage("این هزینه حذف شود؟")
+                    .setMessage(allocated?"با حذف این هزینه، سهم واحدها و تمام پرداخت‌های ثبت‌شده مربوط به آن نیز حذف می‌شود. ادامه می‌دهید؟":"این هزینه حذف شود؟")
                     .setNegativeButton("خیر",null)
                     .setPositiveButton("بله",(d,w)->{store.deleteExpense(e.id);showExpenses();})
                     .show());
-            r.addView(del,lp(dp(58),dp(34)));
-            body.addView(r,rowParams());
+            row.addView(del,lp(dp(58),dp(36)));
+            body.addView(row,rowParams());
         }
         setPage("expenses",scroll(body));
+    }
+
+    private void showExpenseDetail(long expenseId) {
+        detailExpenseId=expenseId;
+        DataStore.Expense e=store.getExpense(expenseId);
+        if(e==null){showExpenses();return;}
+
+        LinearLayout body=vbox();
+        body.setPadding(dp(10),dp(12),dp(10),dp(18));
+        body.addView(pageTitle(e.title));
+        body.addView(tv("هزینه تقسیم‌شده بین واحدها | "+e.date,10,MUTED,false));
+
+        LinearLayout sum=sectionCard("وضعیت وصول",R.drawable.ic_payments);
+        sum.addView(detailLine("مبلغ کل هزینه",money(e.amount)));
+        sum.addView(detailLine("وصول‌شده",money(store.expenseTotalPaid(e.id))));
+        sum.addView(detailLine("مانده قابل وصول",money(store.expenseTotalRemaining(e.id))));
+        body.addView(sum,rowParams());
+
+        body.addView(tv("وضعیت واحدها",14,DARK,true));
+        for(int n=1;n<=12;n++){
+            final int unit=n;
+            long share=store.expenseShare(e.id,n);
+            long paid=store.expensePaid(e.id,n);
+            long remain=store.expenseRemaining(e.id,n);
+            int st=store.expensePaymentStatus(e.id,n);
+            String desc="سهم "+money(share)+" | پرداخت "+money(paid)+" | مانده "+money(remain);
+            LinearLayout row=financialRow(unitTitle(n),desc,st);
+            Button pay=button(st==3?"تسویه":"ثبت پرداخت",st==3?GREEN:Color.WHITE,st==3?SOFT_GREEN:BROWN,true);
+            pay.setEnabled(st!=3 && remain>0);
+            pay.setOnClickListener(v->showExpensePaymentDialog(e.id,unit));
+            row.addView(pay,lp(dp(92),dp(38)));
+            body.addView(row,rowParams());
+        }
+
+        List<DataStore.ExpensePayment> payments=store.expensePaymentsForExpense(e.id);
+        if(!payments.isEmpty()){
+            body.addView(tv("سوابق پرداخت سهم هزینه",14,DARK,true));
+            for(final DataStore.ExpensePayment p:payments){
+                LinearLayout row=historyRow(unitTitle(p.unit),money(p.amount),p.date);
+                Button del=smallDelete(v->new AlertDialog.Builder(this)
+                        .setTitle("حذف پرداخت")
+                        .setMessage("این پرداخت حذف و مبلغ آن از صندوق کسر شود؟")
+                        .setNegativeButton("انصراف",null)
+                        .setPositiveButton("حذف",(d,w)->{store.deleteExpensePayment(p.id);showExpenseDetail(e.id);})
+                        .show());
+                row.addView(del,lp(dp(58),dp(34)));
+                body.addView(row,rowParams());
+            }
+        }
+
+        Button back=button("بازگشت به هزینه‌ها",BROWN,CREAM2,true);
+        back.setOnClickListener(v->showExpenses());
+        body.addView(back,buttonParams());
+
+        setPage("expenseDetail",scroll(body));
+    }
+
+    private void showExpensePaymentDialog(long expenseId, final int unit) {
+        DataStore.Expense e=store.getExpense(expenseId);
+        if(e==null) return;
+        long remain=store.expenseRemaining(expenseId,unit);
+        if(remain<=0){toast("سهم این واحد تسویه شده است");return;}
+
+        LinearLayout form=vbox();
+        form.setPadding(dp(14),dp(4),dp(14),dp(8));
+        form.addView(tv(e.title,12,DARK,true));
+        form.addView(tv("مانده سهم: "+money(remain),11,MUTED,false));
+        final EditText date=labeledField(form,"تاریخ پرداخت",PersianDate.todayKey(),InputType.TYPE_CLASS_TEXT);
+        final EditText amount=moneyEdit("مبلغ پرداختی (تومان)",String.valueOf(remain));
+        form.addView(tv("مبلغ پرداختی",10,MUTED,false));
+        form.addView(amount,rowParams());
+
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle("پرداخت سهم هزینه - " + unitTitle(unit))
+                .setView(form)
+                .setNegativeButton("انصراف",null)
+                .setPositiveButton("ثبت",null)
+                .create();
+
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            long value=safeLong(s(amount),-1);
+            if(value<=0 || value>remain){toast("مبلغ باید بیشتر از صفر و حداکثر برابر مانده سهم باشد");return;}
+            try{
+                store.recordExpensePayment(expenseId,unit,s(date),value);
+                dialog.dismiss();
+                showExpenseDetail(expenseId);
+                toast("پرداخت ثبت و به صندوق اضافه شد");
+            }catch(Exception ex){alert("خطا",ex.getMessage()==null?"ثبت انجام نشد":ex.getMessage());}
+        }));
+        dialog.show();
     }
 
     private void showFund() {
@@ -1066,9 +1218,13 @@ public class MainActivity extends Activity {
         LinearLayout stats=hbox();
         miniStat(stats,"شارژ",store.totalChargeCashIncome(),GREEN);
         miniStat(stats,"آب",store.totalWaterCashIncome(),GREEN);
-        miniStat(stats,"سایر",store.totalOtherCashIncome(),GREEN);
-        miniStat(stats,"هزینه",store.totalExpenses(),RED);
+        miniStat(stats,"سهم هزینه",store.totalExpenseReimbursements(),GREEN);
         body.addView(stats,rowParams());
+
+        LinearLayout stats2=hbox();
+        miniStat(stats2,"سایر",store.totalOtherCashIncome(),GREEN);
+        miniStat(stats2,"کل هزینه",store.totalExpenses(),RED);
+        body.addView(stats2,rowParams());
 
         final EditText initial=moneyEdit("موجودی اولیه صندوق",String.valueOf(store.getInitialFund()));
         body.addView(initial,rowParams());
@@ -1091,7 +1247,12 @@ public class MainActivity extends Activity {
         body.addView(tv("ریز هزینه‌های "+PersianDate.monthLabel(monthKey),14,DARK,true));
         List<DataStore.Expense> expenses=store.expensesForMonth(monthKey);
         if(expenses.isEmpty()) body.addView(tv("برای این ماه هزینه‌ای ثبت نشده است.",10,MUTED,false));
-        for(DataStore.Expense e:expenses) body.addView(historyRow(e.title,money(e.amount),e.date),rowParams());
+        for(DataStore.Expense e:expenses) {
+            String mode=DataStore.EXPENSE_UNITS.equals(e.fundingMode)
+                    ?"تقسیم بین واحدها | وصول "+money(store.expenseTotalPaid(e.id))
+                    :"از محل صندوق/شارژ";
+            body.addView(historyRow(e.title,money(e.amount),mode+" | "+e.date),rowParams());
+        }
 
         setPage("fund",scroll(body));
     }
@@ -1201,7 +1362,11 @@ public class MainActivity extends Activity {
         summary.addView(detailLine("آب تعیین‌شده",money(store.monthWaterDue(monthKey))));
         summary.addView(detailLine("آب وصول‌شده",money(store.monthWaterPaid(monthKey))));
         summary.addView(detailLine("سایر پرداخت‌های ماه",money(store.monthOtherCashIncome(monthKey))));
-        summary.addView(detailLine("هزینه‌های ماه",money(store.monthExpenses(monthKey))));
+        summary.addView(detailLine("کل هزینه‌های ماه",money(store.monthExpenses(monthKey))));
+        summary.addView(detailLine("هزینه از صندوق/شارژ",money(store.monthFundExpenses(monthKey))));
+        summary.addView(detailLine("هزینه تقسیم‌شده بین واحدها",money(store.monthAllocatedExpenses(monthKey))));
+        summary.addView(detailLine("وصول سهم هزینه‌ها",money(store.monthExpenseReimbursements(monthKey))));
+        summary.addView(detailLine("مانده سهم هزینه‌ها",money(store.monthExpenseReceivable(monthKey))));
         summary.addView(detailLine("کل مطالبات تا این ماه",money(store.totalDebtThrough(monthKey))));
         summary.addView(detailLine("موجودی صندوق",money(store.fundBalance())));
         body.addView(summary,rowParams());
@@ -1217,7 +1382,7 @@ public class MainActivity extends Activity {
             if(debt<=0) continue;
             any=true;
             final int unit=n;
-            LinearLayout r=financialRow("واحد "+fa(n),money(debt),1);
+            LinearLayout r=financialRow(unitTitle(n),money(debt),1);
             Button sms=button("پیامک",Color.WHITE,BROWN,true);
             sms.setOnClickListener(v->sendUnitReminder(unit));
             r.addView(sms,lp(dp(66),dp(36)));
@@ -1331,11 +1496,15 @@ public class MainActivity extends Activity {
         rows.add(new ReportImageUtil.Row("دریافتی نقدی شارژ",money(store.totalChargeCashIncome()),1));
         rows.add(new ReportImageUtil.Row("دریافتی نقدی آب",money(store.totalWaterCashIncome()),1));
         rows.add(new ReportImageUtil.Row("سایر دریافتی‌ها",money(store.totalOtherCashIncome()),1));
+        rows.add(new ReportImageUtil.Row("وصول سهم هزینه‌ها",money(store.totalExpenseReimbursements()),1));
         rows.add(new ReportImageUtil.Row("کل هزینه‌ها",money(store.totalExpenses()),2));
         rows.add(new ReportImageUtil.Row("موجودی فعلی صندوق",money(store.fundBalance()),4));
         rows.add(new ReportImageUtil.Row("هزینه‌های "+PersianDate.monthLabel(monthKey),money(store.monthExpenses(monthKey)),2));
         for(DataStore.Expense e:store.expensesForMonth(monthKey)) {
-            rows.add(new ReportImageUtil.Row(e.title,money(e.amount)));
+            String mode=DataStore.EXPENSE_UNITS.equals(e.fundingMode)
+                    ?"تقسیم بین واحدها | مانده "+money(store.expenseTotalRemaining(e.id))
+                    :"از صندوق/شارژ";
+            rows.add(new ReportImageUtil.Row(e.title,money(e.amount)+" | "+mode));
         }
         showReportActions("گزارش صندوق","تا "+PersianDate.monthLabel(monthKey),rows,"fund-"+monthKey.replace("/","-"));
     }
@@ -1347,12 +1516,16 @@ public class MainActivity extends Activity {
         rows.add(new ReportImageUtil.Row("آب تعیین‌شده",money(store.monthWaterDue(monthKey))));
         rows.add(new ReportImageUtil.Row("آب وصول‌شده",money(store.monthWaterPaid(monthKey)),1));
         rows.add(new ReportImageUtil.Row("سایر پرداخت‌های ماه",money(store.monthOtherCashIncome(monthKey)),1));
-        rows.add(new ReportImageUtil.Row("هزینه ماه",money(store.monthExpenses(monthKey)),2));
+        rows.add(new ReportImageUtil.Row("کل هزینه ماه",money(store.monthExpenses(monthKey)),2));
+        rows.add(new ReportImageUtil.Row("از صندوق/شارژ",money(store.monthFundExpenses(monthKey)),2));
+        rows.add(new ReportImageUtil.Row("تقسیم بین واحدها",money(store.monthAllocatedExpenses(monthKey))));
+        rows.add(new ReportImageUtil.Row("وصول سهم هزینه‌ها",money(store.monthExpenseReimbursements(monthKey)),1));
+        rows.add(new ReportImageUtil.Row("مانده سهم هزینه‌ها",money(store.monthExpenseReceivable(monthKey)),2));
         rows.add(new ReportImageUtil.Row("کل مطالبات تا این ماه",money(store.totalDebtThrough(monthKey)),2));
         rows.add(new ReportImageUtil.Row("موجودی صندوق",money(store.fundBalance()),4));
         for(int n=1;n<=12;n++) {
             long debt=store.unitTotalDebtThrough(monthKey,n);
-            rows.add(new ReportImageUtil.Row("واحد "+fa(n),debt>0?("بدهی "+money(debt)):"تسویه",debt>0?2:1));
+            rows.add(new ReportImageUtil.Row(unitTitle(n),debt>0?("بدهی "+money(debt)):"تسویه",debt>0?2:1));
         }
         showReportActions("گزارش مالی ساختمان","ماه "+PersianDate.monthLabel(monthKey),rows,"monthly-"+monthKey.replace("/","-"));
     }
@@ -1368,6 +1541,9 @@ public class MainActivity extends Activity {
         rows.add(new ReportImageUtil.Row("سهم آب",money(store.waterShare(monthKey,unit))));
         rows.add(new ReportImageUtil.Row("پرداخت آب",money(store.waterPaidAmount(monthKey,unit)),1));
         rows.add(new ReportImageUtil.Row("مانده آب",money(store.waterRemaining(monthKey,unit)),store.waterRemaining(monthKey,unit)>0?2:1));
+        rows.add(new ReportImageUtil.Row("سهم هزینه‌های تقسیم‌شده",money(store.unitExpenseDue(monthKey,unit))));
+        rows.add(new ReportImageUtil.Row("پرداخت سهم هزینه‌ها",money(store.unitExpensePaid(monthKey,unit)),1));
+        rows.add(new ReportImageUtil.Row("مانده سهم هزینه‌ها",money(store.unitExpenseRemaining(monthKey,unit)),store.unitExpenseRemaining(monthKey,unit)>0?2:1));
         if(store.chargeCredit(unit)>0) rows.add(new ReportImageUtil.Row("بستانکاری شارژ",money(store.chargeCredit(unit)),1));
         rows.add(new ReportImageUtil.Row("کل بدهی تا این ماه",money(store.unitTotalDebtThrough(monthKey,unit)),store.unitTotalDebtThrough(monthKey,unit)>0?2:1));
         showReportActions("صورتحساب واحد "+fa(unit),"تا "+PersianDate.monthLabel(monthKey),rows,"unit-"+unit+"-"+monthKey.replace("/","-"));
