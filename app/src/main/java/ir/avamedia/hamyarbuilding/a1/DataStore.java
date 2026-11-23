@@ -23,6 +23,9 @@ public final class DataStore {
     public static final String OCC_TENANT = "TENANT";
     public static final String OCC_VACANT = "VACANT";
 
+    public static final String EXPENSE_FUND = "FUND";
+    public static final String EXPENSE_UNITS = "UNITS";
+
     public static final class UnitInfo {
         public int number;
         public int floor;
@@ -92,6 +95,15 @@ public final class DataStore {
         public String title = "";
         public String date = "";
         public long amount;
+        public String fundingMode = EXPENSE_FUND;
+    }
+
+    public static final class ExpensePayment {
+        public long id;
+        public long expenseId;
+        public int unit;
+        public String date = "";
+        public long amount;
     }
 
     public static final class OtherPayment {
@@ -156,6 +168,7 @@ public final class DataStore {
     private final List<UnitInfo> units = new ArrayList<>();
     private final Map<String, MonthData> months = new HashMap<>();
     private final List<Expense> expenses = new ArrayList<>();
+    private final List<ExpensePayment> expensePayments = new ArrayList<>();
     private final List<OtherPayment> otherPayments = new ArrayList<>();
     private final List<ChargePayment> chargePayments = new ArrayList<>();
     private final List<WaterPayment> waterPayments = new ArrayList<>();
@@ -187,6 +200,7 @@ public final class DataStore {
         units.clear();
         months.clear();
         expenses.clear();
+        expensePayments.clear();
         otherPayments.clear();
         chargePayments.clear();
         waterPayments.clear();
@@ -263,7 +277,24 @@ public final class DataStore {
                 ex.title = o.optString("title", "");
                 ex.date = o.optString("date", "");
                 ex.amount = Math.max(0L, o.optLong("amount", 0L));
+                ex.fundingMode = o.optString("fundingMode", EXPENSE_FUND);
+                if (!EXPENSE_UNITS.equals(ex.fundingMode)) ex.fundingMode = EXPENSE_FUND;
                 expenses.add(ex);
+            }
+        }
+
+        JSONArray ep = root.optJSONArray("expensePayments");
+        if (ep != null) {
+            for (int i = 0; i < ep.length(); i++) {
+                JSONObject o = ep.optJSONObject(i);
+                if (o == null) continue;
+                ExpensePayment p = new ExpensePayment();
+                p.id = o.optLong("id", System.currentTimeMillis() + i);
+                p.expenseId = o.optLong("expenseId", 0L);
+                p.unit = o.optInt("unit", 0);
+                p.date = o.optString("date", "");
+                p.amount = Math.max(0L, o.optLong("amount", 0L));
+                if (p.expenseId > 0L && p.unit >= 1 && p.unit <= 12 && p.amount > 0L) expensePayments.add(p);
             }
         }
 
@@ -333,6 +364,7 @@ public final class DataStore {
         units.clear();
         months.clear();
         expenses.clear();
+        expensePayments.clear();
         otherPayments.clear();
         chargePayments.clear();
         waterPayments.clear();
@@ -379,7 +411,7 @@ public final class DataStore {
 
     private JSONObject buildRoot() throws JSONException {
         JSONObject root = new JSONObject();
-        root.put("schema", 6);
+        root.put("schema", 7);
         root.put("initialFund", initialFund);
         root.put("smsTemplate", smsTemplate);
 
@@ -431,9 +463,22 @@ public final class DataStore {
             o.put("title", ex.title);
             o.put("date", ex.date);
             o.put("amount", ex.amount);
+            o.put("fundingMode", ex.fundingMode);
             ea.put(o);
         }
         root.put("expenses", ea);
+
+        JSONArray epa = new JSONArray();
+        for (ExpensePayment p : expensePayments) {
+            JSONObject o = new JSONObject();
+            o.put("id", p.id);
+            o.put("expenseId", p.expenseId);
+            o.put("unit", p.unit);
+            o.put("date", p.date);
+            o.put("amount", p.amount);
+            epa.put(o);
+        }
+        root.put("expensePayments", epa);
 
         JSONArray opa = new JSONArray();
         for (OtherPayment p : otherPayments) {
@@ -982,19 +1027,27 @@ public final class DataStore {
         return sum;
     }
 
-    public void addExpense(String monthKey, String title, long amount, String date) {
+    public Expense addExpense(String monthKey, String title, long amount, String date, String fundingMode) {
         Expense ex = new Expense();
-        ex.id = System.currentTimeMillis();
-        ex.monthKey = monthKey;
+        ex.id = System.currentTimeMillis() + expenses.size();
+        ex.monthKey = monthKey == null ? "" : monthKey;
         ex.title = title == null ? "" : title.trim();
         ex.amount = Math.max(0L, amount);
         ex.date = date == null ? "" : date.trim();
+        ex.fundingMode = EXPENSE_UNITS.equals(fundingMode) ? EXPENSE_UNITS : EXPENSE_FUND;
         expenses.add(ex);
         save();
+        return ex;
+    }
+
+    public Expense getExpense(long id) {
+        for (Expense e : expenses) if (e.id == id) return e;
+        return null;
     }
 
     public void deleteExpense(long id) {
         for (int i = expenses.size() - 1; i >= 0; i--) if (expenses.get(i).id == id) expenses.remove(i);
+        for (int i = expensePayments.size() - 1; i >= 0; i--) if (expensePayments.get(i).expenseId == id) expensePayments.remove(i);
         save();
     }
 
@@ -1007,9 +1060,135 @@ public final class DataStore {
         return out;
     }
 
+    public long expenseShare(long expenseId, int unit) {
+        Expense e = getExpense(expenseId);
+        if (e == null || !EXPENSE_UNITS.equals(e.fundingMode) || unit < 1 || unit > 12) return 0L;
+        long each = e.amount / 12L;
+        long rem = e.amount % 12L;
+        return each + (unit <= rem ? 1L : 0L);
+    }
+
+    public long expensePaid(long expenseId, int unit) {
+        long sum = 0L;
+        for (ExpensePayment p : expensePayments) if (p.expenseId == expenseId && p.unit == unit) sum += p.amount;
+        return sum;
+    }
+
+    public long expenseRemaining(long expenseId, int unit) {
+        return Math.max(0L, expenseShare(expenseId, unit) - expensePaid(expenseId, unit));
+    }
+
+    public int expensePaymentStatus(long expenseId, int unit) {
+        long due = expenseShare(expenseId, unit);
+        if (due <= 0L) return 0;
+        long paid = expensePaid(expenseId, unit);
+        if (paid <= 0L) return 1;
+        if (paid < due) return 2;
+        return 3;
+    }
+
+    public long expenseTotalPaid(long expenseId) {
+        long sum = 0L;
+        for (ExpensePayment p : expensePayments) if (p.expenseId == expenseId) sum += p.amount;
+        return sum;
+    }
+
+    public long expenseTotalRemaining(long expenseId) {
+        Expense e = getExpense(expenseId);
+        if (e == null || !EXPENSE_UNITS.equals(e.fundingMode)) return 0L;
+        return Math.max(0L, e.amount - expenseTotalPaid(expenseId));
+    }
+
+    public ExpensePayment recordExpensePayment(long expenseId, int unit, String date, long amount) {
+        Expense e = getExpense(expenseId);
+        if (e == null || !EXPENSE_UNITS.equals(e.fundingMode)) throw new IllegalArgumentException("این هزینه بین واحدها تقسیم نشده است.");
+        long remain = expenseRemaining(expenseId, unit);
+        if (remain <= 0L) throw new IllegalArgumentException("سهم این واحد قبلاً تسویه شده است.");
+        if (amount <= 0L || amount > remain) throw new IllegalArgumentException("مبلغ پرداخت باید حداکثر برابر مانده سهم واحد باشد.");
+        ExpensePayment p = new ExpensePayment();
+        p.id = System.currentTimeMillis() + expensePayments.size();
+        p.expenseId = expenseId;
+        p.unit = unit;
+        p.date = date == null ? "" : date.trim();
+        p.amount = amount;
+        expensePayments.add(p);
+        save();
+        return p;
+    }
+
+    public void deleteExpensePayment(long id) {
+        for (int i = expensePayments.size() - 1; i >= 0; i--) if (expensePayments.get(i).id == id) expensePayments.remove(i);
+        save();
+    }
+
+    public List<ExpensePayment> expensePaymentsForExpense(long expenseId) {
+        List<ExpensePayment> out = new ArrayList<>();
+        for (ExpensePayment p : expensePayments) if (p.expenseId == expenseId) out.add(p);
+        Collections.sort(out, new Comparator<ExpensePayment>() {
+            @Override public int compare(ExpensePayment a, ExpensePayment b) { return Long.compare(b.id, a.id); }
+        });
+        return out;
+    }
+
+    public List<ExpensePayment> expensePaymentsForUnit(int unit) {
+        List<ExpensePayment> out = new ArrayList<>();
+        for (ExpensePayment p : expensePayments) if (p.unit == unit) out.add(p);
+        Collections.sort(out, new Comparator<ExpensePayment>() {
+            @Override public int compare(ExpensePayment a, ExpensePayment b) { return Long.compare(b.id, a.id); }
+        });
+        return out;
+    }
+
     public long monthExpenses(String monthKey) {
         long sum = 0L;
         for (Expense e : expenses) if (monthKey.equals(e.monthKey)) sum += e.amount;
+        return sum;
+    }
+
+    public long monthFundExpenses(String monthKey) {
+        long sum = 0L;
+        for (Expense e : expenses) if (monthKey.equals(e.monthKey) && EXPENSE_FUND.equals(e.fundingMode)) sum += e.amount;
+        return sum;
+    }
+
+    public long monthAllocatedExpenses(String monthKey) {
+        long sum = 0L;
+        for (Expense e : expenses) if (monthKey.equals(e.monthKey) && EXPENSE_UNITS.equals(e.fundingMode)) sum += e.amount;
+        return sum;
+    }
+
+    public long monthExpenseReimbursements(String monthKey) {
+        long sum = 0L;
+        for (Expense e : expenses) {
+            if (!monthKey.equals(e.monthKey) || !EXPENSE_UNITS.equals(e.fundingMode)) continue;
+            sum += expenseTotalPaid(e.id);
+        }
+        return sum;
+    }
+
+    public long monthExpenseReceivable(String monthKey) {
+        return Math.max(0L, monthAllocatedExpenses(monthKey) - monthExpenseReimbursements(monthKey));
+    }
+
+    public long unitExpenseDue(String monthKey, int unit) {
+        long sum = 0L;
+        for (Expense e : expenses) if (monthKey.equals(e.monthKey) && EXPENSE_UNITS.equals(e.fundingMode)) sum += expenseShare(e.id, unit);
+        return sum;
+    }
+
+    public long unitExpensePaid(String monthKey, int unit) {
+        long sum = 0L;
+        for (Expense e : expenses) if (monthKey.equals(e.monthKey) && EXPENSE_UNITS.equals(e.fundingMode)) sum += Math.min(expenseShare(e.id, unit), expensePaid(e.id, unit));
+        return sum;
+    }
+
+    public long unitExpenseRemaining(String monthKey, int unit) {
+        return Math.max(0L, unitExpenseDue(monthKey, unit) - unitExpensePaid(monthKey, unit));
+    }
+
+    public long totalExpenseReimbursements() {
+        long sum = 0L;
+        for (ExpensePayment p : expensePayments) sum += p.amount;
         return sum;
     }
 
@@ -1048,14 +1227,17 @@ public final class DataStore {
     }
 
     public long unitMonthDebt(String monthKey, int unit) {
-        return chargeRemaining(monthKey, unit) + waterRemaining(monthKey, unit);
+        return chargeRemaining(monthKey, unit) + waterRemaining(monthKey, unit) + unitExpenseRemaining(monthKey, unit);
     }
 
     public long unitTotalDebtThrough(String throughMonth, int unit) {
         int end = PersianDate.monthSerial(throughMonth);
         long sum = 0L;
         for (String key : months.keySet()) {
-            if (PersianDate.monthSerial(key) <= end) sum += unitMonthDebt(key, unit);
+            if (PersianDate.monthSerial(key) <= end) sum += chargeRemaining(key, unit) + waterRemaining(key, unit);
+        }
+        for (Expense e : expenses) {
+            if (EXPENSE_UNITS.equals(e.fundingMode) && PersianDate.monthSerial(e.monthKey) <= end) sum += expenseRemaining(e.id, unit);
         }
         return sum;
     }
@@ -1088,7 +1270,7 @@ public final class DataStore {
     }
 
     public long totalIncome() {
-        return totalChargeCashIncome() + totalWaterCashIncome() + totalOtherCashIncome();
+        return totalChargeCashIncome() + totalWaterCashIncome() + totalOtherCashIncome() + totalExpenseReimbursements();
     }
 
     public long getInitialFund() { return initialFund; }
