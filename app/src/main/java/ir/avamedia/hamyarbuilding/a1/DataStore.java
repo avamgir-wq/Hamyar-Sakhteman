@@ -174,7 +174,9 @@ public final class DataStore {
     private final List<WaterPayment> waterPayments = new ArrayList<>();
 
     private long initialFund = 0L;
-    private String smsTemplate = "مالک/ساکن محترم {نام}، بدهی واحد {واحد} بابت شارژ و آب تا {ماه} مبلغ {مبلغ} تومان است. با تشکر - مدیریت بلوک A1 مجتمع فرهیختگان";
+    private static final String OLD_DEFAULT_SMS = "مالک/ساکن محترم {نام}، بدهی واحد {واحد} بابت شارژ و آب تا {ماه} مبلغ {مبلغ} تومان است. با تشکر - مدیریت بلوک A1 مجتمع فرهیختگان";
+    private static final String DEFAULT_SMS = "مالک/ساکن محترم {نام}، بدهی واحد {واحد} بابت شارژ، آب و سهم هزینه‌ها تا {ماه} مبلغ {مبلغ} تومان است. با تشکر - مدیریت بلوک A1 مجتمع فرهیختگان";
+    private String smsTemplate = DEFAULT_SMS;
 
     public DataStore(Context context) {
         prefs = context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -207,6 +209,7 @@ public final class DataStore {
 
         initialFund = root.optLong("initialFund", 0L);
         smsTemplate = root.optString("smsTemplate", smsTemplate);
+        if (OLD_DEFAULT_SMS.equals(smsTemplate)) smsTemplate = DEFAULT_SMS;
 
         JSONArray u = root.optJSONArray("units");
         if (u != null) {
