@@ -722,6 +722,37 @@ public final class DataStore {
         return out;
     }
 
+    public ChargePayment getChargePayment(long id) {
+        for (ChargePayment p : chargePayments) if (p.id == id) return p;
+        return null;
+    }
+
+    public ChargePayment updateChargePayment(long id, int unit, String date, String startMonth, long amount) {
+        ChargePayment p = getChargePayment(id);
+        if (p == null) throw new IllegalArgumentException("پرداخت شارژ پیدا نشد.");
+        if (p.externalFunding) throw new IllegalArgumentException("این رکورد از انتقال داخلی ساخته شده و از بخش مربوطه ویرایش می‌شود.");
+        if (unit < 1 || unit > 12 || amount <= 0L) throw new IllegalArgumentException("اطلاعات پرداخت صحیح نیست.");
+
+        int index = chargePayments.indexOf(p);
+        chargePayments.remove(p);
+        try {
+            ChargePreview preview = allocateCharge(unit, startMonth, amount, true);
+            p.unit = unit;
+            p.date = date == null ? "" : date.trim();
+            p.startMonth = startMonth;
+            p.amount = amount;
+            p.credit = preview.credit;
+            p.allocations.clear();
+            p.allocations.putAll(preview.allocations);
+            chargePayments.add(index < 0 ? chargePayments.size() : Math.min(index, chargePayments.size()), p);
+            save();
+            return p;
+        } catch (RuntimeException ex) {
+            chargePayments.add(index < 0 ? chargePayments.size() : Math.min(index, chargePayments.size()), p);
+            throw ex;
+        }
+    }
+
     public void deleteChargePayment(long id) {
         for (int i = chargePayments.size() - 1; i >= 0; i--) {
             if (chargePayments.get(i).id == id) chargePayments.remove(i);
@@ -945,6 +976,11 @@ public final class DataStore {
         return p;
     }
 
+    public WaterPayment getWaterPayment(long id) {
+        for (WaterPayment p : waterPayments) if (p.id == id) return p;
+        return null;
+    }
+
     public List<WaterPayment> waterPaymentsForUnit(int unit) {
         List<WaterPayment> out = new ArrayList<>();
         for (WaterPayment p : waterPayments) if (p.unit == unit) out.add(p);
@@ -961,6 +997,44 @@ public final class DataStore {
             @Override public int compare(WaterPayment a, WaterPayment b) { return Long.compare(b.id, a.id); }
         });
         return out;
+    }
+
+    public WaterPayment updateWaterPayment(long id, int unit, String date, long amount) {
+        WaterPayment p = getWaterPayment(id);
+        if (p == null) throw new IllegalArgumentException("پرداخت آب پیدا نشد.");
+        if (unit < 1 || unit > 12 || amount <= 0L) throw new IllegalArgumentException("اطلاعات پرداخت صحیح نیست.");
+
+        int waterIndex = waterPayments.indexOf(p);
+        ChargePayment oldLinked = p.linkedChargePaymentId == 0L ? null : getChargePayment(p.linkedChargePaymentId);
+        int chargeIndex = oldLinked == null ? -1 : chargePayments.indexOf(oldLinked);
+
+        waterPayments.remove(p);
+        if (oldLinked != null) chargePayments.remove(oldLinked);
+
+        try {
+            WaterPaymentPreview preview = previewWaterPayment(unit, p.monthKey, amount);
+            long newLinkedId = 0L;
+            if (preview.transferredToCharge > 0L) {
+                ChargePayment cp = createChargePayment(unit, date, p.monthKey, preview.transferredToCharge, true, true);
+                newLinkedId = cp.id;
+            }
+
+            p.unit = unit;
+            p.date = date == null ? "" : date.trim();
+            p.amount = amount;
+            p.appliedWater = preview.appliedWater;
+            p.transferredToCharge = preview.transferredToCharge;
+            p.linkedChargePaymentId = newLinkedId;
+            waterPayments.add(waterIndex < 0 ? waterPayments.size() : Math.min(waterIndex, waterPayments.size()), p);
+            save();
+            return p;
+        } catch (RuntimeException ex) {
+            waterPayments.add(waterIndex < 0 ? waterPayments.size() : Math.min(waterIndex, waterPayments.size()), p);
+            if (oldLinked != null) {
+                chargePayments.add(chargeIndex < 0 ? chargePayments.size() : Math.min(chargeIndex, chargePayments.size()), oldLinked);
+            }
+            throw ex;
+        }
     }
 
     public void deleteWaterPayment(long id) {
@@ -991,6 +1065,25 @@ public final class DataStore {
         p.amount = amount;
         otherPayments.add(p);
         save();
+    }
+
+    public OtherPayment getOtherPayment(long id) {
+        for (OtherPayment p : otherPayments) if (p.id == id) return p;
+        return null;
+    }
+
+    public OtherPayment updateOtherPayment(long id, int unit, String title, long amount, String date) {
+        OtherPayment p = getOtherPayment(id);
+        if (p == null) throw new IllegalArgumentException("پرداخت پیدا نشد.");
+        if (unit < 1 || unit > 12) throw new IllegalArgumentException("واحد انتخاب‌شده صحیح نیست.");
+        if (amount <= 0L) throw new IllegalArgumentException("مبلغ پرداخت باید بیشتر از صفر باشد.");
+        if (title == null || title.trim().isEmpty()) throw new IllegalArgumentException("عنوان پرداخت را وارد کنید.");
+        p.unit = unit;
+        p.title = title.trim();
+        p.amount = amount;
+        p.date = date == null ? "" : date.trim();
+        save();
+        return p;
     }
 
     public void deleteOtherPayment(long id) {
@@ -1048,6 +1141,44 @@ public final class DataStore {
         return null;
     }
 
+    private long expenseShareForAmount(long amount, int unit) {
+        if (unit < 1 || unit > 12) return 0L;
+        long safe = Math.max(0L, amount);
+        long each = safe / 12L;
+        long rem = safe % 12L;
+        return each + (unit <= rem ? 1L : 0L);
+    }
+
+    public Expense updateExpense(long id, String title, long amount, String date, String fundingMode) {
+        Expense e = getExpense(id);
+        if (e == null) throw new IllegalArgumentException("هزینه پیدا نشد.");
+        if (title == null || title.trim().isEmpty() || amount <= 0L)
+            throw new IllegalArgumentException("عنوان و مبلغ هزینه را صحیح وارد کنید.");
+
+        String newMode = EXPENSE_UNITS.equals(fundingMode) ? EXPENSE_UNITS : EXPENSE_FUND;
+        long paidTotal = expenseTotalPaid(id);
+
+        if (paidTotal > 0L && !EXPENSE_UNITS.equals(newMode))
+            throw new IllegalArgumentException("برای این هزینه پرداخت واحد ثبت شده است؛ ابتدا پرداخت‌های سهم هزینه را حذف کنید تا نوع هزینه قابل تغییر باشد.");
+
+        if (EXPENSE_UNITS.equals(newMode)) {
+            for (int unit = 1; unit <= 12; unit++) {
+                long paid = expensePaid(id, unit);
+                long newShare = expenseShareForAmount(amount, unit);
+                if (paid > newShare) {
+                    throw new IllegalArgumentException("مبلغ جدید از پرداخت ثبت‌شده واحد " + unit + " کمتر است. ابتدا پرداخت آن واحد را اصلاح کنید.");
+                }
+            }
+        }
+
+        e.title = title.trim();
+        e.amount = amount;
+        e.date = date == null ? "" : date.trim();
+        e.fundingMode = newMode;
+        save();
+        return e;
+    }
+
     public void deleteExpense(long id) {
         for (int i = expenses.size() - 1; i >= 0; i--) if (expenses.get(i).id == id) expenses.remove(i);
         for (int i = expensePayments.size() - 1; i >= 0; i--) if (expensePayments.get(i).expenseId == id) expensePayments.remove(i);
@@ -1066,9 +1197,7 @@ public final class DataStore {
     public long expenseShare(long expenseId, int unit) {
         Expense e = getExpense(expenseId);
         if (e == null || !EXPENSE_UNITS.equals(e.fundingMode) || unit < 1 || unit > 12) return 0L;
-        long each = e.amount / 12L;
-        long rem = e.amount % 12L;
-        return each + (unit <= rem ? 1L : 0L);
+        return expenseShareForAmount(e.amount, unit);
     }
 
     public long expensePaid(long expenseId, int unit) {
@@ -1115,6 +1244,30 @@ public final class DataStore {
         p.date = date == null ? "" : date.trim();
         p.amount = amount;
         expensePayments.add(p);
+        save();
+        return p;
+    }
+
+    public ExpensePayment getExpensePayment(long id) {
+        for (ExpensePayment p : expensePayments) if (p.id == id) return p;
+        return null;
+    }
+
+    public ExpensePayment updateExpensePayment(long id, int unit, String date, long amount) {
+        ExpensePayment p = getExpensePayment(id);
+        if (p == null) throw new IllegalArgumentException("پرداخت سهم هزینه پیدا نشد.");
+        Expense e = getExpense(p.expenseId);
+        if (e == null || !EXPENSE_UNITS.equals(e.fundingMode)) throw new IllegalArgumentException("هزینه مربوطه پیدا نشد.");
+        if (unit < 1 || unit > 12 || amount <= 0L) throw new IllegalArgumentException("اطلاعات پرداخت صحیح نیست.");
+
+        long existingForTarget = expensePaid(p.expenseId, unit);
+        if (unit == p.unit) existingForTarget -= p.amount;
+        long available = Math.max(0L, expenseShare(p.expenseId, unit) - existingForTarget);
+        if (amount > available) throw new IllegalArgumentException("مبلغ جدید از مانده سهم واحد بیشتر است.");
+
+        p.unit = unit;
+        p.date = date == null ? "" : date.trim();
+        p.amount = amount;
         save();
         return p;
     }
