@@ -388,6 +388,8 @@ public class MainActivity extends Activity {
         for(final DataStore.ChargePayment p:payments) {
             if(p.externalFunding) continue;
             LinearLayout row=historyRow("شارژ | "+p.date,money(p.amount),allocationSummary(p.allocations));
+            Button edit=smallEdit(v->showEditChargePaymentDialog(p.id,number));
+            row.addView(edit,lp(dp(58),dp(34)));
             Button del=smallDelete(v->new AlertDialog.Builder(this)
                     .setTitle("حذف پرداخت شارژ")
                     .setMessage("این پرداخت حذف شود؟")
@@ -404,6 +406,8 @@ public class MainActivity extends Activity {
             String sub="سهم آب "+money(p.appliedWater);
             if(p.transferredToCharge>0) sub+=" | انتقال به شارژ "+money(p.transferredToCharge);
             LinearLayout row=historyRow("آب | "+p.date,money(p.amount),sub);
+            Button edit=smallEdit(v->showEditWaterPaymentDialog(p.id,number));
+            row.addView(edit,lp(dp(58),dp(34)));
             Button del=smallDelete(v->new AlertDialog.Builder(this)
                     .setTitle("حذف پرداخت آب")
                     .setMessage("پرداخت آب و انتقال مرتبط به شارژ حذف شود؟")
@@ -418,6 +422,8 @@ public class MainActivity extends Activity {
         shown=0;
         for(final DataStore.OtherPayment p:other) {
             LinearLayout row=historyRow("سایر | "+p.title,money(p.amount),p.date);
+            Button edit=smallEdit(v->showEditOtherPaymentDialog(p.id,number));
+            row.addView(edit,lp(dp(58),dp(34)));
             Button del=smallDelete(v->new AlertDialog.Builder(this)
                     .setTitle("حذف سایر پرداخت")
                     .setMessage("این پرداخت حذف و مبلغ آن از صندوق کسر شود؟")
@@ -434,6 +440,8 @@ public class MainActivity extends Activity {
             DataStore.Expense ex=store.getExpense(p.expenseId);
             String title=ex==null?"سهم هزینه":ex.title;
             LinearLayout row=historyRow("سهم هزینه | "+title,money(p.amount),p.date);
+            Button edit=smallEdit(v->showEditExpensePaymentDialog(p.id,number,p.expenseId));
+            row.addView(edit,lp(dp(58),dp(34)));
             Button del=smallDelete(v->new AlertDialog.Builder(this)
                     .setTitle("حذف پرداخت سهم هزینه")
                     .setMessage("این پرداخت حذف و مبلغ آن از صندوق کسر شود؟")
@@ -458,6 +466,12 @@ public class MainActivity extends Activity {
         text.addView(tv(subtitle,9,MUTED,false));
         row.addView(text,new LinearLayout.LayoutParams(0,-2,1f));
         return row;
+    }
+
+    private Button smallEdit(View.OnClickListener listener) {
+        Button b=button("ویرایش",BROWN,CREAM2,false);
+        b.setOnClickListener(listener);
+        return b;
     }
 
     private Button smallDelete(View.OnClickListener listener) {
@@ -959,6 +973,251 @@ public class MainActivity extends Activity {
         dialog.show();
     }
 
+    private void showEditChargePaymentDialog(long paymentId, int returnUnit) {
+        DataStore.ChargePayment p=store.getChargePayment(paymentId);
+        if(p==null || p.externalFunding){toast("پرداخت شارژ پیدا نشد");return;}
+
+        LinearLayout form=vbox();
+        form.setPadding(dp(14),dp(4),dp(14),dp(8));
+
+        final int[] selectedUnit={p.unit};
+        form.addView(tv("واحد",10,MUTED,false));
+        LinearLayout unitPicker=hbox();
+        Button nextUnit=button("›",BROWN,CREAM2,true);
+        TextView unitLabel=center(unitTitle(selectedUnit[0]),12,DARK,true);
+        Button prevUnit=button("‹",BROWN,CREAM2,true);
+        nextUnit.setOnClickListener(v->{selectedUnit[0]=selectedUnit[0]>=12?1:selectedUnit[0]+1;unitLabel.setText(unitTitle(selectedUnit[0]));});
+        prevUnit.setOnClickListener(v->{selectedUnit[0]=selectedUnit[0]<=1?12:selectedUnit[0]-1;unitLabel.setText(unitTitle(selectedUnit[0]));});
+        unitPicker.addView(nextUnit,lp(dp(48),dp(40)));
+        unitPicker.addView(unitLabel,new LinearLayout.LayoutParams(0,dp(40),1f));
+        unitPicker.addView(prevUnit,lp(dp(48),dp(40)));
+        form.addView(unitPicker,rowParams());
+
+        final EditText date=labeledField(form,"تاریخ پرداخت",p.date,InputType.TYPE_CLASS_TEXT);
+        final EditText amount=moneyEdit("مبلغ پرداختی (تومان)",String.valueOf(p.amount));
+        form.addView(tv("مبلغ پرداختی",10,MUTED,false));
+        form.addView(amount,rowParams());
+
+        form.addView(tv("شروع تخصیص پرداخت",10,MUTED,false));
+        final String[] start={p.startMonth};
+        LinearLayout monthPicker=hbox();
+        Button next=button("›",BROWN,CREAM2,true);
+        TextView label=center(PersianDate.monthLabel(start[0]),12,DARK,true);
+        Button prev=button("‹",BROWN,CREAM2,true);
+        next.setOnClickListener(v->{start[0]=PersianDate.shiftMonth(start[0],1);label.setText(PersianDate.monthLabel(start[0]));});
+        prev.setOnClickListener(v->{start[0]=PersianDate.shiftMonth(start[0],-1);label.setText(PersianDate.monthLabel(start[0]));});
+        monthPicker.addView(next,lp(dp(48),dp(40)));
+        monthPicker.addView(label,new LinearLayout.LayoutParams(0,dp(40),1f));
+        monthPicker.addView(prev,lp(dp(48),dp(40)));
+        form.addView(monthPicker,rowParams());
+
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle("ویرایش پرداخت شارژ")
+                .setView(form)
+                .setNegativeButton("انصراف",null)
+                .setPositiveButton("ذخیره",null)
+                .create();
+
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            long value=safeLong(s(amount),-1);
+            if(value<=0){toast("مبلغ پرداختی را صحیح وارد کنید");return;}
+            try{
+                store.updateChargePayment(paymentId,selectedUnit[0],s(date),start[0],value);
+                dialog.dismiss();
+                if(returnUnit>0) showUnitDetail(returnUnit); else showCharge();
+                toast("پرداخت شارژ ویرایش شد");
+            }catch(Exception ex){alert("خطا",ex.getMessage()==null?"ویرایش انجام نشد":ex.getMessage());}
+        }));
+        dialog.show();
+    }
+
+    private void showEditWaterPaymentDialog(long paymentId, int returnUnit) {
+        DataStore.WaterPayment p=store.getWaterPayment(paymentId);
+        if(p==null){toast("پرداخت آب پیدا نشد");return;}
+
+        LinearLayout form=vbox();
+        form.setPadding(dp(14),dp(4),dp(14),dp(8));
+        final int[] selectedUnit={p.unit};
+        form.addView(tv("واحد",10,MUTED,false));
+        LinearLayout picker=hbox();
+        Button next=button("›",BROWN,CREAM2,true);
+        TextView label=center(unitTitle(selectedUnit[0]),12,DARK,true);
+        Button prev=button("‹",BROWN,CREAM2,true);
+        next.setOnClickListener(v->{selectedUnit[0]=selectedUnit[0]>=12?1:selectedUnit[0]+1;label.setText(unitTitle(selectedUnit[0]));});
+        prev.setOnClickListener(v->{selectedUnit[0]=selectedUnit[0]<=1?12:selectedUnit[0]-1;label.setText(unitTitle(selectedUnit[0]));});
+        picker.addView(next,lp(dp(48),dp(40)));
+        picker.addView(label,new LinearLayout.LayoutParams(0,dp(40),1f));
+        picker.addView(prev,lp(dp(48),dp(40)));
+        form.addView(picker,rowParams());
+
+        final EditText date=labeledField(form,"تاریخ پرداخت",p.date,InputType.TYPE_CLASS_TEXT);
+        final EditText amount=moneyEdit("مبلغ پرداختی (تومان)",String.valueOf(p.amount));
+        form.addView(tv("مبلغ پرداختی",10,MUTED,false));
+        form.addView(amount,rowParams());
+
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle("ویرایش پرداخت آب")
+                .setView(form)
+                .setNegativeButton("انصراف",null)
+                .setPositiveButton("ذخیره",null)
+                .create();
+
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            long value=safeLong(s(amount),-1);
+            if(value<=0){toast("مبلغ پرداختی را صحیح وارد کنید");return;}
+            try{
+                store.updateWaterPayment(paymentId,selectedUnit[0],s(date),value);
+                dialog.dismiss();
+                if(returnUnit>0) showUnitDetail(returnUnit); else showWater();
+                toast("پرداخت آب ویرایش شد");
+            }catch(Exception ex){alert("خطا",ex.getMessage()==null?"ویرایش انجام نشد":ex.getMessage());}
+        }));
+        dialog.show();
+    }
+
+    private void showEditOtherPaymentDialog(long paymentId, int returnUnit) {
+        DataStore.OtherPayment p=store.getOtherPayment(paymentId);
+        if(p==null){toast("پرداخت پیدا نشد");return;}
+
+        LinearLayout form=vbox();
+        form.setPadding(dp(14),dp(4),dp(14),dp(8));
+        final int[] selectedUnit={p.unit};
+        form.addView(tv("واحد",10,MUTED,false));
+        LinearLayout picker=hbox();
+        Button next=button("›",BROWN,CREAM2,true);
+        TextView label=center(unitTitle(selectedUnit[0]),12,DARK,true);
+        Button prev=button("‹",BROWN,CREAM2,true);
+        next.setOnClickListener(v->{selectedUnit[0]=selectedUnit[0]>=12?1:selectedUnit[0]+1;label.setText(unitTitle(selectedUnit[0]));});
+        prev.setOnClickListener(v->{selectedUnit[0]=selectedUnit[0]<=1?12:selectedUnit[0]-1;label.setText(unitTitle(selectedUnit[0]));});
+        picker.addView(next,lp(dp(48),dp(40)));
+        picker.addView(label,new LinearLayout.LayoutParams(0,dp(40),1f));
+        picker.addView(prev,lp(dp(48),dp(40)));
+        form.addView(picker,rowParams());
+
+        final EditText title=labeledField(form,"عنوان پرداخت",p.title,InputType.TYPE_CLASS_TEXT);
+        final EditText amount=moneyEdit("مبلغ پرداختی (تومان)",String.valueOf(p.amount));
+        form.addView(tv("مبلغ پرداختی",10,MUTED,false));
+        form.addView(amount,rowParams());
+        final EditText date=labeledField(form,"تاریخ پرداخت",p.date,InputType.TYPE_CLASS_TEXT);
+
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle("ویرایش سایر پرداخت")
+                .setView(form)
+                .setNegativeButton("انصراف",null)
+                .setPositiveButton("ذخیره",null)
+                .create();
+
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            long value=safeLong(s(amount),-1);
+            if(TextUtils.isEmpty(s(title)) || value<=0){toast("عنوان و مبلغ را صحیح وارد کنید");return;}
+            try{
+                store.updateOtherPayment(paymentId,selectedUnit[0],s(title),value,s(date));
+                dialog.dismiss();
+                if(returnUnit>0) showUnitDetail(returnUnit); else showOtherPayments();
+                toast("پرداخت ویرایش شد");
+            }catch(Exception ex){alert("خطا",ex.getMessage()==null?"ویرایش انجام نشد":ex.getMessage());}
+        }));
+        dialog.show();
+    }
+
+    private void showEditExpenseDialog(long expenseId) {
+        DataStore.Expense e=store.getExpense(expenseId);
+        if(e==null){toast("هزینه پیدا نشد");return;}
+
+        LinearLayout form=vbox();
+        form.setPadding(dp(14),dp(4),dp(14),dp(8));
+        final EditText title=labeledField(form,"عنوان هزینه",e.title,InputType.TYPE_CLASS_TEXT);
+        final EditText amount=moneyEdit("مبلغ (تومان)",String.valueOf(e.amount));
+        form.addView(tv("مبلغ",10,MUTED,false));
+        form.addView(amount,rowParams());
+        final EditText date=labeledField(form,"تاریخ",e.date,InputType.TYPE_CLASS_TEXT);
+
+        form.addView(tv("نحوه تأمین هزینه",11,DARK,true));
+        final RadioGroup funding=new RadioGroup(this);
+        funding.setOrientation(RadioGroup.VERTICAL);
+        funding.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        final RadioButton fromFund=radio("از محل شارژ و صندوق پرداخت شود");
+        final RadioButton fromUnits=radio("بین ۱۲ واحد تقسیم شود و سهم واحدها وصول شود");
+        funding.addView(fromFund);
+        funding.addView(fromUnits);
+        if(DataStore.EXPENSE_UNITS.equals(e.fundingMode)) fromUnits.setChecked(true); else fromFund.setChecked(true);
+        form.addView(funding,rowParams());
+
+        if(store.expenseTotalPaid(e.id)>0){
+            form.addView(tv("برای این هزینه پرداخت واحد ثبت شده است؛ تغییر نوع هزینه تا حذف آن پرداخت‌ها امکان‌پذیر نیست.",9,ORANGE,false));
+        }
+
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle("ویرایش هزینه")
+                .setView(scroll(form))
+                .setNegativeButton("انصراف",null)
+                .setPositiveButton("ذخیره",null)
+                .create();
+
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            long value=safeLong(s(amount),-1);
+            if(TextUtils.isEmpty(s(title)) || value<=0){toast("عنوان و مبلغ هزینه را صحیح وارد کنید");return;}
+            String mode=fromUnits.isChecked()?DataStore.EXPENSE_UNITS:DataStore.EXPENSE_FUND;
+            try{
+                store.updateExpense(expenseId,s(title),value,s(date),mode);
+                dialog.dismiss();
+                DataStore.Expense updated=store.getExpense(expenseId);
+                if(updated!=null && DataStore.EXPENSE_UNITS.equals(updated.fundingMode)) showExpenseDetail(expenseId);
+                else showExpenses();
+                toast("هزینه ویرایش شد");
+            }catch(Exception ex){alert("امکان ویرایش",ex.getMessage()==null?"ویرایش انجام نشد":ex.getMessage());}
+        }));
+        dialog.show();
+    }
+
+    private void showEditExpensePaymentDialog(long paymentId, int returnUnit, long returnExpenseId) {
+        DataStore.ExpensePayment p=store.getExpensePayment(paymentId);
+        if(p==null){toast("پرداخت پیدا نشد");return;}
+        DataStore.Expense e=store.getExpense(p.expenseId);
+        if(e==null){toast("هزینه مربوطه پیدا نشد");return;}
+
+        LinearLayout form=vbox();
+        form.setPadding(dp(14),dp(4),dp(14),dp(8));
+        form.addView(tv(e.title,12,DARK,true));
+        final int[] selectedUnit={p.unit};
+        form.addView(tv("واحد",10,MUTED,false));
+        LinearLayout picker=hbox();
+        Button next=button("›",BROWN,CREAM2,true);
+        TextView label=center(unitTitle(selectedUnit[0]),12,DARK,true);
+        Button prev=button("‹",BROWN,CREAM2,true);
+        next.setOnClickListener(v->{selectedUnit[0]=selectedUnit[0]>=12?1:selectedUnit[0]+1;label.setText(unitTitle(selectedUnit[0]));});
+        prev.setOnClickListener(v->{selectedUnit[0]=selectedUnit[0]<=1?12:selectedUnit[0]-1;label.setText(unitTitle(selectedUnit[0]));});
+        picker.addView(next,lp(dp(48),dp(40)));
+        picker.addView(label,new LinearLayout.LayoutParams(0,dp(40),1f));
+        picker.addView(prev,lp(dp(48),dp(40)));
+        form.addView(picker,rowParams());
+
+        final EditText date=labeledField(form,"تاریخ پرداخت",p.date,InputType.TYPE_CLASS_TEXT);
+        final EditText amount=moneyEdit("مبلغ پرداختی (تومان)",String.valueOf(p.amount));
+        form.addView(tv("مبلغ پرداختی",10,MUTED,false));
+        form.addView(amount,rowParams());
+
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle("ویرایش پرداخت سهم هزینه")
+                .setView(form)
+                .setNegativeButton("انصراف",null)
+                .setPositiveButton("ذخیره",null)
+                .create();
+
+        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            long value=safeLong(s(amount),-1);
+            if(value<=0){toast("مبلغ را صحیح وارد کنید");return;}
+            try{
+                store.updateExpensePayment(paymentId,selectedUnit[0],s(date),value);
+                dialog.dismiss();
+                if(returnUnit>0) showUnitDetail(returnUnit);
+                else showExpenseDetail(returnExpenseId);
+                toast("پرداخت سهم هزینه ویرایش شد");
+            }catch(Exception ex){alert("خطا",ex.getMessage()==null?"ویرایش انجام نشد":ex.getMessage());}
+        }));
+        dialog.show();
+    }
+
     private long mapLong(Map<Integer,Long> m,int key){
         Long x=m.get(key);
         return x==null?0L:x;
@@ -1018,6 +1277,8 @@ public class MainActivity extends Activity {
         if(list.isEmpty()) body.addView(tv("برای این ماه سایر پرداختی ثبت نشده است.",10,MUTED,false));
         for(final DataStore.OtherPayment p:list){
             LinearLayout row=historyRow(unitTitle(p.unit)+" | "+p.title,money(p.amount),p.date);
+            Button edit=smallEdit(v->showEditOtherPaymentDialog(p.id,-1));
+            row.addView(edit,lp(dp(58),dp(34)));
             Button del=smallDelete(v->new AlertDialog.Builder(this)
                     .setTitle("حذف پرداخت")
                     .setMessage("این پرداخت حذف شود؟ مبلغ آن از موجودی صندوق نیز کسر می‌شود.")
@@ -1094,6 +1355,9 @@ public class MainActivity extends Activity {
             }
             LinearLayout row=historyRow(e.title,money(e.amount),sub);
 
+            Button edit=smallEdit(v->showEditExpenseDialog(e.id));
+            row.addView(edit,lp(dp(58),dp(36)));
+
             if(allocated){
                 Button status=button("وضعیت",BROWN,CREAM2,true);
                 status.setOnClickListener(v->{detailExpenseId=e.id;showExpenseDetail(e.id);});
@@ -1121,6 +1385,9 @@ public class MainActivity extends Activity {
         body.setPadding(dp(10),dp(12),dp(10),dp(18));
         body.addView(pageTitle(e.title));
         body.addView(tv("هزینه تقسیم‌شده بین واحدها | "+e.date,10,MUTED,false));
+        Button editExpense=button("ویرایش هزینه",BROWN,CREAM2,true);
+        editExpense.setOnClickListener(v->showEditExpenseDialog(e.id));
+        body.addView(editExpense,buttonParams());
 
         LinearLayout sum=sectionCard("وضعیت وصول",R.drawable.ic_payments);
         sum.addView(detailLine("مبلغ کل هزینه",money(e.amount)));
@@ -1149,6 +1416,8 @@ public class MainActivity extends Activity {
             body.addView(tv("سوابق پرداخت سهم هزینه",14,DARK,true));
             for(final DataStore.ExpensePayment p:payments){
                 LinearLayout row=historyRow(unitTitle(p.unit),money(p.amount),p.date);
+                Button edit=smallEdit(v->showEditExpensePaymentDialog(p.id,-1,e.id));
+                row.addView(edit,lp(dp(58),dp(34)));
                 Button del=smallDelete(v->new AlertDialog.Builder(this)
                         .setTitle("حذف پرداخت")
                         .setMessage("این پرداخت حذف و مبلغ آن از صندوق کسر شود؟")
